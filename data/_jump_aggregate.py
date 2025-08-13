@@ -77,7 +77,7 @@ def main(args):
         else:
             # Only process original files when flag is False (exclude centered files)
             if "centered" not in f:
-        files_to_process.append(f)
+                files_to_process.append(f)
     
     print(f"Found {len(files_to_process)} files to process")
     

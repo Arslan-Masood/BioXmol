@@ -31,33 +31,21 @@ METADATA_PATH=datasets
 
 # Create preprocessed data directory
 PREPROCESSED_DIR="$OUTPUT_DIR/jump_preprocessed"
+SCRIPT_OUTPUT_DIR="$OUTPUT_DIR/script_outputs"
+
 mkdir -p "$PREPROCESSED_DIR"
 
 echo "Downloading and normalizing JUMP-CP compound plates"
-sbatch  --time=5-00 \
+sbatch  --time=00:60:00 \
         --mem=40G \
         --array=0-4 \
-        --cpus-per-task=4 \
-        --partition=cpu \
+        --cpus-per-task=1 \
         --wait \
-        --export=CONDA_ENV=${CONDA_ENV},OUTPUT_DIR=${PREPROCESSED_DIR},METADATA_PATH=${METADATA_PATH} \
-        --wrap "module load miniconda && \
-                source activate \${CONDA_ENV} && \
-                source ./.env && \
-                python data/_jump_download_single_plate.py -o \${OUTPUT_DIR} -m \${METADATA_PATH}"
+        --output=${SCRIPT_OUTPUT_DIR}/slurm-%a.out \
+        --export=ALL,CONDA_ENV=${CONDA_ENV},PREPROCESSED_DIR=${PREPROCESSED_DIR},JUMP_METADATA_PATH=${METADATA_PATH} \
+        --wrap "source /appl/scibuilder-mamba/aalto-rhel9/prod/software/mamba/2024-01/39cf5e1/etc/profile.d/conda.sh && \
+                conda activate \${CONDA_ENV} && \
+                python data/_jump_download_single_plate.py -o \${PREPROCESSED_DIR} -m \${JUMP_METADATA_PATH}"
 
-# First: Aggregate original data (without --is_centered flag)
-echo "=== Aggregating ORIGINAL data ==="
-python data/_jump_aggregate.py -d $PREPROCESSED_DIR -o $PREPROCESSED_DIR
-
-# Second: Aggregate centered data (with --is_centered flag)  
-echo "=== Aggregating CENTERED data ==="
-python data/_jump_aggregate.py -d $PREPROCESSED_DIR -o $PREPROCESSED_DIR --is_centered
-
-echo "=== Aggregation completed! ==="
-
-# Cleanup individual plate files after aggregation
-echo "=== Starting cleanup of individual plate files ==="
-python data/cleanup_individual_plates.py $PREPROCESSED_DIR
-
-echo "✅ Done! All processing completed successfully."
+echo "✅ Download and initial preprocessing completed!"
+echo "📋 Next step: Run data/process_data_trirton.sh for aggregation and cleanup"

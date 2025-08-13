@@ -1,0 +1,45 @@
+schema: '2.0'
+stages:
+  download_and_preprocess:
+    cmd: bash data/download_and_preprocess.sh /scratch/work/masooda1/datasets 
+      mocop
+    deps:
+    - path: data/_jump_download_single_plate.py
+      hash: md5
+      md5: 84fd076a3757f612a188e1a52c915b08
+      size: 2385
+    - path: data/download_and_preprocess.sh
+      hash: md5
+      md5: 750bb4f5853239620cec36b313df4615
+      size: 1755
+  process_jump_data:
+    cmd: sbatch data/process_data_trirton.sh 
+      /scratch/work/masooda1/datasets/jump_preprocessed mocop
+    deps:
+    - path: data/_jump_aggregate.py
+      hash: md5
+      md5: bbce1370d2430cd298fa91c706228f4c
+      size: 3972
+    - path: data/cleanup_individual_plates.py
+      hash: md5
+      md5: 65c7118b4e749dfb618664bdedeb873d
+      size: 2728
+    - path: data/jump_data_splits.py
+      hash: md5
+      md5: 6f6c325e4189d902ef518e07599a22f3
+      size: 5014
+    - path: data/process_data_trirton.sh
+      hash: md5
+      md5: 73af53136f5ed78b4a7671c89da19097
+      size: 2375
+  download_jump_data:
+    cmd: bash data/download_jump_data.sh /scratch/work/masooda1/datasets mocop
+    deps:
+    - path: data/_jump_download_single_plate.py
+      hash: md5
+      md5: 84fd076a3757f612a188e1a52c915b08
+      size: 2385
+    - path: data/download_jump_data.sh
+      hash: md5
+      md5: 750bb4f5853239620cec36b313df4615
+      size: 1755

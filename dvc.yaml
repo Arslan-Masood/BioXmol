@@ -1,15 +1,21 @@
 stages:
-  # Data Processing Stages
-  download_and_preprocess:
-    cmd: bash data/download_and_preprocess.sh /scratch/work/masooda1/datasets mocop
+  # Data Download and Initial Processing
+  download_jump_data:
+    cmd: bash data/download_jump_data.sh /scratch/work/masooda1/datasets mocop
     deps:
-      - data/download_and_preprocess.sh
-    outs:
-      - /scratch/work/masooda1/datasets/chembl20/
-      - /scratch/work/masooda1/datasets/jump/
-      - /scratch/work/masooda1/datasets/jump_preprocessed/
-      - datasets/
-    desc: "Download, preprocess, and aggregate JUMP and ChEMBL data"
+      - data/download_jump_data.sh
+      - data/_jump_download_single_plate.py
+    desc: "Download JUMP plates and extract raw data"
+
+  # Data Aggregation and Processing
+  process_jump_data:
+    cmd: sbatch data/process_data_trirton.sh /scratch/work/masooda1/datasets/jump_preprocessed mocop
+    deps:
+      - data/process_data_trirton.sh
+      - data/_jump_aggregate.py
+      - data/cleanup_individual_plates.py
+      - data/jump_data_splits.py
+    desc: "Aggregate JUMP data, cleanup, and create splits"
 
 #  process_lincs_u2os:
 #    cmd: bash data/process_LINCS_data.sh
