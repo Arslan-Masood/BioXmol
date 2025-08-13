@@ -38,7 +38,7 @@ mkdir -p "$PREPROCESSED_DIR"
 echo "Downloading and normalizing JUMP-CP compound plates"
 sbatch  --time=00:60:00 \
         --mem=40G \
-        --array=0-4 \
+        --array=0-1729 \
         --cpus-per-task=1 \
         --wait \
         --output=${SCRIPT_OUTPUT_DIR}/slurm-%a.out \
@@ -46,6 +46,12 @@ sbatch  --time=00:60:00 \
         --wrap "source /appl/scibuilder-mamba/aalto-rhel9/prod/software/mamba/2024-01/39cf5e1/etc/profile.d/conda.sh && \
                 conda activate \${CONDA_ENV} && \
                 python data/_jump_download_single_plate.py -o \${PREPROCESSED_DIR} -m \${JUMP_METADATA_PATH}"
+
+# Check if sbatch job succeeded
+if [ $? -ne 0 ]; then
+    echo "❌ Error: SLURM job failed during JUMP data download."
+    exit 1
+fi
 
 echo "✅ Download and initial preprocessing completed!"
 echo "📋 Next step: Run data/process_data_trirton.sh for aggregation and cleanup"

@@ -30,8 +30,8 @@ stages:
       size: 5014
     - path: data/process_data_trirton.sh
       hash: md5
-      md5: 73af53136f5ed78b4a7671c89da19097
-      size: 2375
+      md5: 885370ca9e81470569ed06f06f2d14f3
+      size: 2836
   download_jump_data:
     cmd: bash data/download_jump_data.sh /scratch/work/masooda1/datasets mocop
     deps:
@@ -41,5 +41,18 @@ stages:
       size: 2385
     - path: data/download_jump_data.sh
       hash: md5
-      md5: 750bb4f5853239620cec36b313df4615
-      size: 1755
+      md5: 19df6f3032988e97032a3b1580ae1863
+      size: 1890
+  process_lincs_data:
+    cmd: sbatch data/process_LINCS_data.sh 
+      /scratch/work/masooda1/datasets/LINCS/ 
+      /scratch/work/masooda1/datasets/LINCS_preprocessed/ cmappy_env
+    deps:
+    - path: data/process_LINCS_data.py
+      hash: md5
+      md5: d3f54d5ec353e063db8d5cfc97e22936
+      size: 31768
+    - path: data/process_LINCS_data.sh
+      hash: md5
+      md5: 0aea62b05f36b9ac2c19118d6ab08601
+      size: 1803

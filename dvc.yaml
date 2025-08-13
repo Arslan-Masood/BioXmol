@@ -17,15 +17,13 @@ stages:
       - data/jump_data_splits.py
     desc: "Aggregate JUMP data, cleanup, and create splits"
 
-#  process_lincs_u2os:
-#    cmd: bash data/process_LINCS_data.sh
-#    deps:
-#      - data/process_LINCS_data.sh
-#      - data/LINCS_splitting_U2OS.py
-#      - data/LINCS_U2OS/
-#    outs:
-#      - data/processed/lincs_u2os_splits/
-#    desc: "Process and split LINCS U2OS cell line data"
+  # Process LINCS data
+  process_lincs_data:
+    cmd: sbatch data/process_LINCS_data.sh /scratch/work/masooda1/datasets/LINCS/ /scratch/work/masooda1/datasets/LINCS_preprocessed/ cmappy_env
+    deps:
+      - data/process_LINCS_data.sh
+      - data/process_LINCS_data.py
+    desc: "Process LINCS data"
 #
 #  # VAE/AE Training Stages
 #  train_vae:

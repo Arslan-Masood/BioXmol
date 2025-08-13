@@ -38,28 +38,48 @@ fi
 # First: Aggregate original data (without --is_centered flag)
 echo "=== Aggregating ORIGINAL data ==="
 python -u /scratch/work/masooda1/Multi_Modal_Contrastive/data/_jump_aggregate.py -d $PREPROCESSED_DIR -o $PREPROCESSED_DIR
+if [ $? -ne 0 ]; then
+    echo "❌ Error: Failed to aggregate original data."
+    exit 1
+fi
 
 # Second: Aggregate centered data (with --is_centered flag)  
 echo "=== Aggregating CENTERED data ==="
 python -u /scratch/work/masooda1/Multi_Modal_Contrastive/data/_jump_aggregate.py -d $PREPROCESSED_DIR -o $PREPROCESSED_DIR --is_centered
+if [ $? -ne 0 ]; then
+    echo "❌ Error: Failed to aggregate centered data."
+    exit 1
+fi
 
 echo "=== Aggregation completed! ==="
 
 # Cleanup individual plate files after aggregation
 echo "=== Starting cleanup of individual plate files ==="
 python -u /scratch/work/masooda1/Multi_Modal_Contrastive/data/cleanup_individual_plates.py $PREPROCESSED_DIR
+if [ $? -ne 0 ]; then
+    echo "❌ Error: Failed to cleanup individual plate files."
+    exit 1
+fi
 
 echo "=== Creating data splits ==="
 mkdir -p ${SPLITS_DIR}
 python -u /scratch/work/masooda1/Multi_Modal_Contrastive/data/jump_data_splits.py \
     ${PREPROCESSED_DIR}/centered.filtered.parquet \
     ${SPLITS_DIR}
+if [ $? -ne 0 ]; then
+    echo "❌ Error: Failed to create data splits."
+    exit 1
+fi
 
 echo "=== Creating dummy data ==="
 mkdir -p ${DUMMY_DATA_DIR}
 python -u /scratch/work/masooda1/Multi_Modal_Contrastive/data/dummy_data/script_for_dummy_data/cellular_data_split.py \
     ${PREPROCESSED_DIR}/centered.filtered.parquet \
     ${DUMMY_DATA_DIR}
+if [ $? -ne 0 ]; then
+    echo "❌ Error: Failed to create dummy data."
+    exit 1
+fi
 
 echo "✅ All processing completed successfully!"
 
