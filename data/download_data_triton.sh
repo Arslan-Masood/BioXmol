@@ -18,12 +18,13 @@ git clone https://github.com/jump-cellpainting/datasets
 METADATA_PATH=datasets
 # Ensure the output directory exists
 mkdir -p ${SCRIPT_OUTPUT_DIR}
+mkdir -p ${OUTPUT_DIR}
 
 echo "Downloading and normalizing JUMP-CP compound plates"
-sbatch  --time=5-00 \
+sbatch  --time=00:60:00 \
         --mem=40G \
         --array=0-1729 \
-        --cpus-per-task=4 \
+        --cpus-per-task=1 \
         --wait \
         --output=${SCRIPT_OUTPUT_DIR}/slurm-%A_%a.out \
         --export=ALL,MAMBA_CMD=${MAMBA_CMD},CONDA_ENV=${CONDA_ENV},OUTPUT_DIR=${OUTPUT_DIR},METADATA_PATH=${METADATA_PATH} \
@@ -31,6 +32,6 @@ sbatch  --time=5-00 \
                 conda activate \${CONDA_ENV} && \
                 python data/_jump_download_single_plate.py -o \${OUTPUT_DIR} -m \${METADATA_PATH}"
 
-echo "Aggregating and cleaning JUMP-CP"
-python data/_jump_aggregate.py -d $OUTPUT_DIR -o $OUTPUT_DIR --is_centered
+#echo "Aggregating and cleaning JUMP-CP"
+#python data/_jump_aggregate.py -d $OUTPUT_DIR -o $OUTPUT_DIR --is_centered
 echo "Done!"

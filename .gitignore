@@ -80,7 +80,6 @@ Thumbs.db
 # ================================
 
 # DVC cache and temporary files
-/dvc.lock
 .dvc/tmp
 .dvc/cache
 
