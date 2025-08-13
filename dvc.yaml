@@ -1,0 +1,174 @@
+stages:
+  # Data Processing Stages
+  download_and_preprocess:
+    cmd: bash data/download_and_preprocess.sh /scratch/work/masooda1/datasets mocop
+    deps:
+      - data/download_and_preprocess.sh
+    outs:
+      - /scratch/work/masooda1/datasets/chembl20/
+      - /scratch/work/masooda1/datasets/jump/
+      - /scratch/work/masooda1/datasets/jump_preprocessed/
+      - datasets/
+    desc: "Download, preprocess, and aggregate JUMP and ChEMBL data"
+
+#  process_lincs_u2os:
+#    cmd: bash data/process_LINCS_data.sh
+#    deps:
+#      - data/process_LINCS_data.sh
+#      - data/LINCS_splitting_U2OS.py
+#      - data/LINCS_U2OS/
+#    outs:
+#      - data/processed/lincs_u2os_splits/
+#    desc: "Process and split LINCS U2OS cell line data"
+#
+#  # VAE/AE Training Stages
+#  train_vae:
+#    cmd: sbatch scripts/train_vae_triton.sh configs/train_vae_config.yaml
+#    deps:
+#      - scripts/train_vae_triton.sh
+#      - configs/train_vae_config.yaml
+#      - train_vae.py
+#      - data/processed/
+#    outs:
+#      - models/vae/
+#    desc: "Train Variational Autoencoder on JUMP data"
+#
+#  train_ae:
+#    cmd: sbatch scripts/train_vae_triton.sh configs/train_ae_config.yaml
+#    deps:
+#      - scripts/train_vae_triton.sh
+#      - configs/train_ae_config.yaml
+#      - train_vae.py
+#      - data/processed/
+#    outs:
+#      - models/ae/
+#    desc: "Train Autoencoder on JUMP data"
+#
+#  # Multi-Modal Contrastive Learning Stages
+#  train_jump_mocop:
+#    cmd: sbatch exp/train_jump_mocop_triton.sh
+#    deps:
+#      - exp/train_jump_mocop_triton.sh
+#      - configs/jump_mocop.yml
+#      - bin/train.py
+#      - mocop/
+#      - data/processed/jump_centered/
+#    outs:
+#      - models/jump_mocop/
+#    desc: "Train MoCop contrastive model on JUMP data"
+#
+#  train_jump_mocop_lincs:
+#    cmd: sbatch exp/train_jump_mocop_LINCS_triton.sh
+#    deps:
+#      - exp/train_jump_mocop_LINCS_triton.sh
+#      - configs/jump_mocop_LINCS.yml
+#      - bin/train.py
+#      - mocop/
+#      - data/processed/jump_centered/
+#      - data/processed/lincs_u2os_splits/
+#    outs:
+#      - models/jump_mocop_lincs/
+#    desc: "Train MoCop with JUMP + LINCS U2OS data"
+#
+#  train_jump_mocop_lincs_all:
+#    cmd: sbatch exp/train_jump_mocop_LINCS_all_cell_lines_triton.sh
+#    deps:
+#      - exp/train_jump_mocop_LINCS_all_cell_lines_triton.sh
+#      - configs/jump_mocop_LINCS_all_cell_lines.yml
+#      - bin/train.py
+#      - mocop/
+#      - data/processed/jump_centered/
+#      - data/processed/lincs_all_cells_splits/
+#    outs:
+#      - models/jump_mocop_lincs_all/
+#    desc: "Train MoCop with JUMP + LINCS all cell lines"
+#
+#  train_jump_mocop_lincs_all_dummy:
+#    cmd: sbatch exp/train_jump_mocop_LINCS_all_cell_lines_triton_dummy_data.sh
+#    deps:
+#      - exp/train_jump_mocop_LINCS_all_cell_lines_triton_dummy_data.sh
+#      - configs/jump_mocop_LINCS_all_cell_lines_dummy_data.yml
+#      - bin/train.py
+#      - mocop/
+#      - data/dummy_data/
+#    outs:
+#      - models/jump_mocop_lincs_all_dummy/
+#    desc: "Train MoCop with dummy data for testing"
+#
+#  # ChEMBL Evaluation Stages
+#  evaluate_chembl_mocop:
+#    cmd: sbatch exp/train_chembl20_mocop_triton.sh
+#    deps:
+#      - exp/train_chembl20_mocop_triton.sh
+#      - configs/chembl20_mocop.yml
+#      - bin/train.py
+#      - models/jump_mocop_lincs/
+#      - data/chembl20/
+#    outs:
+#      - models/chembl_mocop/
+#    desc: "Fine-tune MoCop model on ChEMBL20"
+#
+#  evaluate_chembl_linear:
+#    cmd: sbatch exp/train_chembl20_mocop_linear_triton.sh
+#    deps:
+#      - exp/train_chembl20_mocop_linear_triton.sh
+#      - configs/chembl20_mocop_linear.yml
+#      - bin/train.py
+#      - models/jump_mocop_lincs/
+#      - data/chembl20/
+#    outs:
+#      - models/chembl_linear/
+#    desc: "Linear evaluation of MoCop model on ChEMBL20"
+#
+#  evaluate_chembl_fromscratch:
+#    cmd: sbatch exp/train_chembl20_fromscratch_triton.sh
+#    deps:
+#      - exp/train_chembl20_fromscratch_triton.sh
+#      - configs/chembl20_fromscratch.yml
+#      - bin/train.py
+#      - data/chembl20/
+#    outs:
+#      - models/chembl_fromscratch/
+#    desc: "Train from scratch on ChEMBL20 (baseline)"
+#
+#  # State Dictionary Remapping
+#  remap_mocop_state_dict:
+#    cmd: bash exp/remap_state_dict_mocop.sh
+#    deps:
+#      - exp/remap_state_dict_mocop.sh
+#      - bin/remap_state_dict.py
+#      - models/jump_mocop/
+#    outs:
+#      - models/jump_mocop_remapped/
+#    desc: "Remap MoCop model state dictionary"
+#
+#  remap_mocop_lincs_state_dict:
+#    cmd: bash exp/remap_state_dict_mocop_LINCS.sh
+#    deps:
+#      - exp/remap_state_dict_mocop_LINCS.sh
+#      - bin/remap_state_dict.py
+#      - models/jump_mocop_lincs/
+#    outs:
+#      - models/jump_mocop_lincs_remapped/
+#    desc: "Remap MoCop LINCS model state dictionary"
+#
+#  # Analysis and Visualization
+#  analyze_hyperparameters:
+#    cmd: python analyze_hp_results.py
+#    deps:
+#      - analyze_hp_results.py
+#      - evaluation_results/
+#    outs:
+#      - evaluation_results/hyperparameter_analysis/
+#    desc: "Analyze hyperparameter tuning results"
+#
+#  generate_umap_plots:
+#    cmd: bash run_umap_job.sh
+#    deps:
+#      - run_umap_job.sh
+#      - plot_aggregated_umap.py
+#      - models/
+#      - data/processed/
+#    outs:
+#      - umap_plots/
+#    desc: "Generate UMAP visualizations via SLURM job" 

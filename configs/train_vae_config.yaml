@@ -1,0 +1,54 @@
+# VAE Training Configuration
+# This config file contains all parameters for training VAE models on JUMP Cell Painting data
+
+# Data parameters
+data:
+  data_path: "/scratch/work/masooda1/datasets/jump_data/centered.filtered.parquet"
+  train_split: null  # Path to train split CSV file (optional)
+  val_split: null    # Path to validation split CSV file (optional) 
+  test_split: null   # Path to test split CSV file (optional)
+  batch_size: 512
+  num_workers: 8
+  normalize: true    # Whether to normalize features
+
+# Exclude control molecules (InChIKeys)
+  exclude_molecules: 
+    - "IBCXZJCWDGCXQT-UHFFFAOYSA-N"  # 1593 duplicates
+    - "IHLVSLOZUHKNMQ-UHFFFAOYSA-N"  # 5881 duplicates
+    - "SRVFFFJZQVENJC-UHFFFAOYSA-N"  # 7059 duplicates
+    - "CQKBSRPVZZLCJE-UHFFFAOYSA-N"  # 7443 duplicates
+    - "KPBNHDGDUADAGP-UHFFFAOYSA-N"  # 7454 duplicates
+    - "GJFCONYVAUNLKB-UHFFFAOYSA-N"  # 7459 duplicates
+    - "LOUPRKONTZGTKE-UHFFFAOYSA-N"  # 7459 duplicates
+    - "OINGHOPGNMYCAB-UHFFFAOYSA-N"  # 7461 duplicates
+    - "IVUGFMLRJOCGAS-UHFFFAOYSA-N"  # 7469 duplicates
+    - "IAZDPXIOMUYVGZ-UHFFFAOYSA-N"  # 79094 duplicates
+    
+# Model parameters
+model:
+  model_type: "vae"        # "vae" or "ae"
+  architecture: "vanilla"  # "vanilla", "medium", or "large"
+  latent_dim: 128
+  dropout: 0.1
+  norm_type: "batchnorm"   # "batchnorm", "layernorm", or "none"
+  beta: 1.0                # KL divergence weight (beta-VAE)
+
+# Optimization parameters
+optimization:
+  learning_rate: 0.001      # 1e-3 as decimal
+  weight_decay: 0.0001      # 1e-4 as decimal
+
+# Training parameters
+training:
+  max_epochs: 100
+  patience: 15
+  gpus: 1
+  precision: 32
+  seed: 42
+
+# Logging parameters
+logging:
+  experiment_name: "jump_vae_vanilla"  # Will be used as-is
+  project_name: "jump-cell-painting"
+  log_dir: "/scratch/work/masooda1/Multi_Modal_Contrastive/vae_logs"
+  use_wandb: false  # Set to true to enable wandb logging 

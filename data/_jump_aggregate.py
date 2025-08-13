@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import argparse
+from tqdm import tqdm
 
 def drop_bad_columns(df):
     cols = [c for c in df.columns if "Metadata" not in c]
@@ -10,12 +11,11 @@ def drop_bad_columns(df):
     #cols_to_drop.extend([cols[i] for i, s in enumerate(stdev) if s < 0.1 or s > 5])
     # Drop only low variance columns
     cols_to_drop.extend([cols[i] for i, s in enumerate(stdev) if s < 0.1])
-
-    cols_to_drop.extend([c for c in cols if "Nuclei_Correlation_RWC" in c])
-    cols_to_drop.extend([c for c in cols if "Nuclei_Correlation_Manders" in c])
-    cols_to_drop.extend([c for c in cols if "Nuclei_Granularity_14" in c])
-    cols_to_drop.extend([c for c in cols if "Nuclei_Granularity_15" in c])
-    cols_to_drop.extend([c for c in cols if "Nuclei_Granularity_16" in c])
+    #cols_to_drop.extend([c for c in cols if "Nuclei_Correlation_RWC" in c])
+    #cols_to_drop.extend([c for c in cols if "Nuclei_Correlation_Manders" in c])
+    #cols_to_drop.extend([c for c in cols if "Nuclei_Granularity_14" in c])
+    #cols_to_drop.extend([c for c in cols if "Nuclei_Granularity_15" in c])
+    #cols_to_drop.extend([c for c in cols if "Nuclei_Granularity_16" in c])
 
     df = df[[c for c in df.columns if c not in cols_to_drop]]
     return df
@@ -57,26 +57,54 @@ def clean_dataframe(df, metadata_keyword="Metadata"):
 
 
 def main(args):
+    print("Starting aggregation...")
     data_dir = args.data_dir
     output_dir = args.output_dir
     is_centered = args.is_centered
-    dfs = []
+    
+    # Get list of files to process
+    files_to_process = []
     for f in os.listdir(data_dir):
-        if is_centered and "centered" not in f:
+        if not f.endswith('.parquet'):
             continue
+        if 'filtered' in f:  # Skip already processed files
+            continue
+            
+        if is_centered:
+            # Only process centered files when flag is True
+            if "centered" in f:
+                files_to_process.append(f)
+        else:
+            # Only process original files when flag is False (exclude centered files)
+            if "centered" not in f:
+        files_to_process.append(f)
+    
+    print(f"Found {len(files_to_process)} files to process")
+    
+    dfs = []
+    # Add tqdm progress bar for file processing
+    for f in tqdm(files_to_process, desc="Processing files"):
         df = pd.read_parquet(os.path.join(data_dir, f))
         dfs.append(df)
 
+    print("Concatenating dataframes...")
     df = pd.concat(dfs)
+    
+    print("Dropping bad columns...")
     df = drop_bad_columns(df)
 
     total_smiles = df.shape[0]
     print(f"Total SMILES: {total_smiles}")
+    
+    print("Cleaning dataframe...")
     df = clean_dataframe(df)
     
     dropped_smiles = total_smiles - df.shape[0]
     print(f"Dropped SMILES: {dropped_smiles}")
+    
+    print("Final cleanup...")
     df = df.dropna(axis=1)
+    
     filename = f"{'centered.' if is_centered else ''}filtered.parquet"
     filepath = os.path.join(output_dir, filename)
     df.to_parquet(filepath)
