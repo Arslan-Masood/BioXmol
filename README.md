@@ -54,20 +54,14 @@ dvc pull
 
 ## DVC Pipeline
 
-This project includes a comprehensive DVC pipeline for automated data processing and model training. The pipeline consists of multiple stages that handle data download, preprocessing, and model training.
+This project includes a comprehensive DVC pipeline for automated data processing and model training. The pipeline handles:
 
-### Pipeline Overview
+1. **📥 Data Download**: Downloads and extracts JUMP Cell Painting data
+2. **🔄 Data Processing**: Aggregates JUMP data, creates splits, and generates dummy datasets  
+3. **🧬 LINCS Processing**: Processes LINCS L1000 transcriptomic data
+4. **🤖 Model Training**: VAE/AE training, multi-modal contrastive learning, ChEMBL evaluation (stages available but commented)
 
-The DVC pipeline (`dvc.yaml`) includes the following stages:
-
-1. **📥 Data Download** (`download_jump_data`): Downloads and extracts JUMP Cell Painting data
-2. **🔄 Data Processing** (`process_jump_data`): Aggregates JUMP data, creates splits, and generates dummy datasets
-3. **🧬 LINCS Processing** (`process_lincs_data`): Processes LINCS L1000 transcriptomic data
-4. **🤖 Model Training** (commented): VAE/AE training, multi-modal contrastive learning, ChEMBL evaluation
-
-### Running the DVC Pipeline
-
-To execute the complete data processing pipeline:
+### Quick Start
 
 ```bash
 # Start a screen session for long-running processes
@@ -79,76 +73,9 @@ source activate mocop
 
 # Run the complete DVC pipeline
 dvc repro
-
-# Detach from screen: Ctrl+A, then D
-# Reattach later: screen -r dvc_pipeline
 ```
 
-### Individual Stage Execution
-
-You can also run individual stages:
-
-```bash
-# Download JUMP data only
-dvc repro download_jump_data
-
-# Process JUMP data only
-dvc repro process_jump_data
-
-# Process LINCS data only
-dvc repro process_lincs_data
-```
-
-### Pipeline Configuration
-
-The pipeline processes data with the following structure:
-
-```
-/scratch/work/masooda1/datasets/
-├── jump/                           # Raw JUMP data (extracted)
-├── jump_preprocessed/             # Processed JUMP data
-│   ├── centered.filtered.parquet  # Main aggregated data
-│   ├── jump_data_splits/          # Train/val/test splits
-│   └── dummy_data/                # Small test datasets
-├── chembl20/                      # ChEMBL20 data
-├── LINCS/                         # Raw LINCS L1000 data
-└── LINCS_preprocessed/            # Processed LINCS data
-    ├── landmark_cmp_data_min1000compounds_all_measurements.parquet
-    └── *.png                      # Analysis plots
-```
-
-### LINCS Data Processing Parameters
-
-The LINCS processing stage accepts various parameters for customization:
-
-```yaml
-# Example DVC command with parameters
-cmd: sbatch data/process_LINCS_data.sh \
-    /input/lincs/data/ \
-    /output/processed/data/ \
-    cmappy_env \
-    --min_compounds 1000 \
-    --filter_dose_time true \
-    --dose_min 0.001 \
-    --dose_max 100 \
-    --time_points 6 24
-```
-
-### Monitoring Pipeline Progress
-
-- **SLURM Jobs**: Monitor job status with `squeue -u $USER`
-- **Output Logs**: Check `script_outputs/` directory for detailed logs
-- **DVC Status**: Use `dvc status` to see pipeline state
-- **Error Handling**: All scripts include proper error checking and will fail fast if issues occur
-
-### Pipeline Dependencies
-
-Each stage has defined dependencies and outputs:
-- **Dependencies**: Scripts, input data, configuration files
-- **Outputs**: Processed datasets, model files, analysis plots
-- **Error Propagation**: Failed stages will stop the pipeline execution
-
-For detailed script documentation and parameter options, see the individual script files in the `data/` directory.
+For detailed pipeline documentation, configuration options, monitoring instructions, and troubleshooting, see **[DVC_SETUP.md](DVC_SETUP.md)**.
 
 ## Methodology
 
