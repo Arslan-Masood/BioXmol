@@ -1,7 +1,10 @@
 stages:
   # Data Download and Initial Processing
   download_jump_data:
-    cmd: bash data/download_jump_data.sh /scratch/work/masooda1/datasets mocop
+    cmd: >
+      bash data/download_jump_data.sh
+      /scratch/work/masooda1/datasets
+      mocop
     deps:
       - data/download_jump_data.sh
       - data/_jump_download_single_plate.py
@@ -9,9 +12,12 @@ stages:
 
   # Data Aggregation and Processing
   process_jump_data:
-    cmd: sbatch data/process_data_trirton.sh /scratch/work/masooda1/datasets/jump_preprocessed mocop
+    cmd: >
+      sbatch data/process_jump_data.sh
+      /scratch/work/masooda1/datasets/jump_preprocessed
+      mocop
     deps:
-      - data/process_data_trirton.sh
+      - data/process_jump_data.sh
       - data/_jump_aggregate.py
       - data/cleanup_individual_plates.py
       - data/jump_data_splits.py
@@ -19,34 +25,56 @@ stages:
 
   # Process LINCS data
   process_lincs_data:
-    cmd: sbatch data/process_LINCS_data.sh /scratch/work/masooda1/datasets/LINCS/ /scratch/work/masooda1/datasets/LINCS_preprocessed/ cmappy_env
+    cmd: >
+      sbatch data/process_LINCS_data.sh
+      /scratch/work/masooda1/datasets/LINCS/
+      /scratch/work/masooda1/datasets/LINCS_preprocessed/
+      cmappy_env
     deps:
       - data/process_LINCS_data.sh
       - data/process_LINCS_data.py
     desc: "Process LINCS data"
-#
-#  # VAE/AE Training Stages
-#  train_vae:
-#    cmd: sbatch scripts/train_vae_triton.sh configs/train_vae_config.yaml
-#    deps:
-#      - scripts/train_vae_triton.sh
-#      - configs/train_vae_config.yaml
-#      - train_vae.py
-#      - data/processed/
-#    outs:
-#      - models/vae/
-#    desc: "Train Variational Autoencoder on JUMP data"
-#
-#  train_ae:
-#    cmd: sbatch scripts/train_vae_triton.sh configs/train_ae_config.yaml
-#    deps:
-#      - scripts/train_vae_triton.sh
-#      - configs/train_ae_config.yaml
-#      - train_vae.py
-#      - data/processed/
-#    outs:
-#      - models/ae/
-#    desc: "Train Autoencoder on JUMP data"
+
+  # Train Autoencoder on JUMP data
+  train_ae_for_jump_cp:
+    cmd: >
+      sbatch scripts/train_vae_triton.sh
+      configs/train_ae_jump_cp_config.yaml
+      mocop
+    deps:
+      - scripts/train_vae_triton.sh
+      - configs/train_ae_jump_cp_config.yaml
+      - train_vae.py
+    desc: "Train Autoencoder on JUMP data"
+
+  # Extract normalization parameters for fast evaluation
+  extract_normalization_for_jump_cp:
+    cmd: >
+      sbatch scripts/extract_normalization_triton.sh
+      configs/train_ae_jump_cp_config.yaml
+      mocop
+    deps:
+      - scripts/extract_normalization_triton.sh
+      - extract_normalization_params.py
+      - configs/train_ae_jump_cp_config.yaml
+    desc: "Extract normalization parameters for fast evaluation"
+
+  # Evaluate trained Autoencoder
+  evaluate_ae_for_jump_cp:
+    cmd: >
+      sbatch scripts/evaluate_vae_triton.sh
+      vae_logs_jump_cp/jump_ae_best/checkpoints/last.ckpt
+      configs/train_ae_jump_cp_config.yaml
+      vae_logs_jump_cp/evaluation_results
+      mocop
+    deps:
+      - scripts/evaluate_vae_triton.sh
+      - evaluate_vae.py
+      - configs/train_ae_jump_cp_config.yaml
+      - vae_logs_jump_cp/jump_ae_best/checkpoints/last.ckpt
+      - vae_logs_jump_cp/jump_ae_best/normalization_params.npz
+    desc: "Evaluate trained Autoencoder on JUMP data"
+    
 #
 #  # Multi-Modal Contrastive Learning Stages
 #  train_jump_mocop:

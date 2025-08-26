@@ -13,7 +13,7 @@ stages:
       md5: 750bb4f5853239620cec36b313df4615
       size: 1755
   process_jump_data:
-    cmd: sbatch data/process_data_trirton.sh 
+    cmd: sbatch data/process_jump_data.sh 
       /scratch/work/masooda1/datasets/jump_preprocessed mocop
     deps:
     - path: data/_jump_aggregate.py
@@ -28,10 +28,10 @@ stages:
       hash: md5
       md5: 6f6c325e4189d902ef518e07599a22f3
       size: 5014
-    - path: data/process_data_trirton.sh
+    - path: data/process_jump_data.sh
       hash: md5
-      md5: 885370ca9e81470569ed06f06f2d14f3
-      size: 2836
+      md5: 9aab038bdb729db53f379216534f0e33
+      size: 2837
   download_jump_data:
     cmd: bash data/download_jump_data.sh /scratch/work/masooda1/datasets mocop
     deps:
@@ -56,3 +56,59 @@ stages:
       hash: md5
       md5: 0aea62b05f36b9ac2c19118d6ab08601
       size: 1803
+  train_ae_for_jump_cp:
+    cmd: sbatch scripts/train_vae_triton.sh configs/train_ae_jump_cp_config.yaml
+      mocop
+    deps:
+    - path: configs/train_ae_jump_cp_config.yaml
+      hash: md5
+      md5: fa033e0b597a525be5fab46403555616
+      size: 2644
+    - path: scripts/train_vae_triton.sh
+      hash: md5
+      md5: 61c2133bdf9391cb57b71ce54fe7a891
+      size: 1427
+    - path: train_vae.py
+      hash: md5
+      md5: 53c49d47b33b195f9b7f38ccff223f60
+      size: 34197
+  evaluate_ae_for_jump_cp:
+    cmd: "sbatch scripts/evaluate_vae_triton.sh vae_logs_jump_cp/jump_ae_best/checkpoints/last.ckpt
+      configs/train_ae_jump_cp_config.yaml vae_logs_jump_cp/evaluation_results mocop\n"
+    deps:
+    - path: configs/train_ae_jump_cp_config.yaml
+      hash: md5
+      md5: fb0348bfc70f13e268c7860143ba13d8
+      size: 2759
+    - path: evaluate_vae.py
+      hash: md5
+      md5: 6d41218bbc71fcaf4dc472f183cb766b
+      size: 26937
+    - path: scripts/evaluate_vae_triton.sh
+      hash: md5
+      md5: 331649cf7af0b029609364675fb03357
+      size: 1471
+    - path: vae_logs_jump_cp/jump_ae_best/checkpoints/last.ckpt
+      hash: md5
+      md5: aa3d7046584692b0a9d8da98ffd3b7ed
+      size: 251823329
+    - path: vae_logs_jump_cp/jump_ae_best/normalization_params.npz
+      hash: md5
+      md5: 708ae0d0c7fb180903bdc61d066868ff
+      size: 902490
+  extract_normalization_for_jump_cp:
+    cmd: "sbatch scripts/extract_normalization_triton.sh configs/train_ae_jump_cp_config.yaml
+      mocop\n"
+    deps:
+    - path: configs/train_ae_jump_cp_config.yaml
+      hash: md5
+      md5: 9df7a9e4636ae3fd7c9c50942b92a16e
+      size: 2759
+    - path: extract_normalization_params.py
+      hash: md5
+      md5: 37d08042d82e8a6b8b68bcc5280904ef
+      size: 4892
+    - path: scripts/extract_normalization_triton.sh
+      hash: md5
+      md5: 90e8210dfea77b17995eed0a504c783b
+      size: 1142

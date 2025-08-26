@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
-from sklearn.metrics import silhouette_score
+from sklearn.metrics import silhouette_score, r2_score
 from sklearn.cluster import KMeans
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader, TensorDataset
@@ -33,21 +33,15 @@ def load_model_from_checkpoint(checkpoint_path: str) -> JUMPVAE:
 
 
 def compute_reconstruction_metrics(model: JUMPVAE, dataloader: DataLoader, device: str = "cuda"):
-    """Compute reconstruction metrics for the entire dataset in both normalized and original space."""
+    """Compute reconstruction metrics in original space only with MAE and R² focus."""
     model.to(device)
     model.eval()
     
-    all_mse_norm = []
-    all_mae_norm = []
-    all_mse_orig = []
-    all_mae_orig = []
-    all_original_norm = []
-    all_reconstructed_norm = []
-    all_original_orig = []
-    all_reconstructed_orig = []
+    all_original = []
+    all_reconstructed = []
     all_latent = []
     
-    # Get normalization parameters from dataset if available
+    # Get normalization parameters from dataset
     dataset = dataloader.dataset
     if hasattr(dataset, 'dataset') and hasattr(dataset.dataset, 'feature_mean'):
         # Handle subset datasets
@@ -60,297 +54,309 @@ def compute_reconstruction_metrics(model: JUMPVAE, dataloader: DataLoader, devic
         has_normalization = True
     else:
         has_normalization = False
-        print("Warning: Could not find normalization parameters. Computing metrics only in model space.")
+        print("Error: Could not find normalization parameters. Cannot compute original space metrics.")
+        return None
     
     with torch.no_grad():
         for batch in dataloader:
-            x_norm = batch.to(device)  # Use the complete batch tensor
-            x_recon_norm, mu, logvar = model(x_norm)  # Normalized reconstruction
+            x_norm = batch.to(device)
+            x_recon_norm, mu, logvar = model(x_norm)
             
-            # Compute metrics in normalized space
-            mse_norm = torch.mean((x_norm - x_recon_norm) ** 2, dim=1)
-            mae_norm = torch.mean(torch.abs(x_norm - x_recon_norm), dim=1)
-            
-            all_mse_norm.extend(mse_norm.cpu().numpy())
-            all_mae_norm.extend(mae_norm.cpu().numpy())
-            all_original_norm.append(x_norm.cpu().numpy())
-            all_reconstructed_norm.append(x_recon_norm.cpu().numpy())
+            # Denormalize to original space
+            x_orig = x_norm.cpu().numpy() * feature_std.flatten() + feature_mean.flatten()
+            x_recon_orig = x_recon_norm.cpu().numpy() * feature_std.flatten() + feature_mean.flatten()
+                
+            all_original.append(x_orig)
+            all_reconstructed.append(x_recon_orig)
             all_latent.append(mu.cpu().numpy())
-            
-            # Compute metrics in original space if normalization info available
-            if has_normalization:
-                # Denormalize to original space
-                x_orig = x_norm.cpu().numpy() * feature_std.flatten() + feature_mean.flatten()
-                x_recon_orig = x_recon_norm.cpu().numpy() * feature_std.flatten() + feature_mean.flatten()
-                
-                # Compute metrics in original space
-                mse_orig = np.mean((x_orig - x_recon_orig) ** 2, axis=1)
-                mae_orig = np.mean(np.abs(x_orig - x_recon_orig), axis=1)
-                
-                all_mse_orig.extend(mse_orig)
-                all_mae_orig.extend(mae_orig)
-                all_original_orig.append(x_orig)
-                all_reconstructed_orig.append(x_recon_orig)
     
     # Concatenate all batches
-    all_original_norm = np.concatenate(all_original_norm, axis=0)
-    all_reconstructed_norm = np.concatenate(all_reconstructed_norm, axis=0)
-    all_latent = np.concatenate(all_latent, axis=0)
+    original = np.concatenate(all_original, axis=0)
+    reconstructed = np.concatenate(all_reconstructed, axis=0)
+    latent = np.concatenate(all_latent, axis=0)
+    
+    # Debug: Check data ranges
+    print(f"Original data range: {original.min():.3f} to {original.max():.3f}")
+    print(f"Reconstructed data range: {reconstructed.min():.3f} to {reconstructed.max():.3f}")
+    print(f"Original shape: {original.shape}")
+    
+    # Compute sample-wise metrics (average across features for each sample)
+    sample_mae = np.mean(np.abs(original - reconstructed), axis=1)  # Shape: (n_samples,)
+    
+    # Compute feature-wise R² using sklearn (for each feature across all samples)
+    feature_r2 = []
+    for j in range(original.shape[1]):
+        y_true = original[:, j]  # True values for feature j across all samples
+        y_pred = reconstructed[:, j]  # Predicted values for feature j across all samples
+        
+        # Check for valid data
+        if np.all(np.isfinite(y_true)) and np.all(np.isfinite(y_pred)) and np.var(y_true) > 1e-10:
+            try:
+                r2 = r2_score(y_true, y_pred)
+                feature_r2.append(r2)
+            except:
+                feature_r2.append(np.nan)
+        else:
+            feature_r2.append(np.nan)
+    
+    feature_r2 = np.array(feature_r2)
+    
+    # Debug: Print computed statistics
+    print(f"Sample MAE stats: mean={np.nanmean(sample_mae):.6f}, std={np.nanstd(sample_mae):.6f}")
+    print(f"Feature R² stats: mean={np.nanmean(feature_r2):.6f}, std={np.nanstd(feature_r2):.6f}")
+    print(f"Feature R² range: {np.nanmin(feature_r2):.3f} to {np.nanmax(feature_r2):.3f}")
+    print(f"Sample MAE range: {np.nanmin(sample_mae):.3f} to {np.nanmax(sample_mae):.3f}")
+    
+    # Additional R² statistics to understand the distribution
+    feature_r2_clean = feature_r2[~np.isnan(feature_r2)]
+    extreme_negative_count = np.sum(feature_r2_clean < -10)
+    print(f"\n📊 R² Distribution Analysis:")
+    print(f"   Median R²: {np.median(feature_r2_clean):.3f}")
+    print(f"   75th percentile R²: {np.percentile(feature_r2_clean, 75):.3f}")
+    print(f"   90th percentile R²: {np.percentile(feature_r2_clean, 90):.3f}")
+    print(f"   95th percentile R²: {np.percentile(feature_r2_clean, 95):.3f}")
+    print(f"   Features with R² < -10: {extreme_negative_count} ({extreme_negative_count/len(feature_r2_clean)*100:.1f}%)")
+    print(f"   Features with R² < -100: {np.sum(feature_r2_clean < -100)} ({np.sum(feature_r2_clean < -100)/len(feature_r2_clean)*100:.1f}%)")
+    print(f"   Features with R² > 0.5: {np.sum(feature_r2_clean > 0.5)} ({np.sum(feature_r2_clean > 0.5)/len(feature_r2_clean)*100:.1f}%)")
     
     metrics = {
-        # Normalized space metrics
-        'mse_per_sample_norm': np.array(all_mse_norm),
-        'mae_per_sample_norm': np.array(all_mae_norm),
-        'mean_mse_norm': np.mean(all_mse_norm),
-        'mean_mae_norm': np.mean(all_mae_norm),
-        'std_mse_norm': np.std(all_mse_norm),
-        'std_mae_norm': np.std(all_mae_norm),
-        'original_norm': all_original_norm,
-        'reconstructed_norm': all_reconstructed_norm,
-        'latent': all_latent,
-        'has_original_space': has_normalization
+        'original': original,
+        'reconstructed': reconstructed,
+        'latent': latent,
+        'sample_mae': sample_mae,
+        'feature_r2': feature_r2,
+        'mean_sample_mae': np.nanmean(sample_mae),
+        'mean_feature_r2': np.nanmean(feature_r2),
+        'median_feature_r2': np.median(feature_r2_clean),
+        'percentile_75_feature_r2': np.percentile(feature_r2_clean, 75),
+        'std_sample_mae': np.nanstd(sample_mae),
+        'std_feature_r2': np.nanstd(feature_r2),
+        'extreme_negative_r2_count': extreme_negative_count,
     }
-    
-    # Add original space metrics if available
-    if has_normalization:
-        all_original_orig = np.concatenate(all_original_orig, axis=0)
-        all_reconstructed_orig = np.concatenate(all_reconstructed_orig, axis=0)
-        
-        metrics.update({
-            'mse_per_sample_orig': np.array(all_mse_orig),
-            'mae_per_sample_orig': np.array(all_mae_orig),
-            'mean_mse_orig': np.mean(all_mse_orig),
-            'mean_mae_orig': np.mean(all_mae_orig),
-            'std_mse_orig': np.std(all_mse_orig),
-            'std_mae_orig': np.std(all_mae_orig),
-            'original_orig': all_original_orig,
-            'reconstructed_orig': all_reconstructed_orig,
-        })
     
     return metrics
 
 
 def plot_reconstruction_quality(metrics: dict, save_path: str = None):
-    """Plot reconstruction quality metrics in both normalized and original space."""
-    # Determine number of subplots based on available metrics
-    if metrics['has_original_space']:
-        fig, axes = plt.subplots(4, 3, figsize=(21, 24))  # 4 rows: norm metrics, norm features, orig metrics, orig features
-        spaces = [('norm', 'Normalized Space'), ('orig', 'Original Space')]
+    """Reconstruction quality plots: Sample MAE (zoomed), Feature R² distribution (zoomed), and reconstruction scatterplot."""
+    
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+    
+    # 1. Sample-wise MAE distribution (ZOOMED to 0-50 range)
+    axes[0, 0].hist(metrics['sample_mae'], bins=50, alpha=0.7, edgecolor='black', color='skyblue')
+    axes[0, 0].axvline(metrics['mean_sample_mae'], color='red', linestyle='--', linewidth=2,
+                       label=f'Mean: {metrics["mean_sample_mae"]:.4f}')
+    axes[0, 0].set_xlabel('Sample MAE (Original Space)')
+    axes[0, 0].set_ylabel('Frequency')
+    axes[0, 0].set_title('Sample-wise MAE Distribution (Zoomed 0-50)')
+    axes[0, 0].set_xlim(0, 50)  # Zoom to 0-50 range
+    axes[0, 0].legend()
+    axes[0, 0].grid(True, alpha=0.3)
+    
+    # 2. Feature-wise R² distribution (ZOOMED to reasonable range) - moved from position [1,0]
+    valid_feature_r2 = metrics['feature_r2'][~np.isnan(metrics['feature_r2'])]
+    reasonable_r2 = valid_feature_r2[valid_feature_r2 > -10]  # Remove extreme outliers
+    axes[0, 1].hist(reasonable_r2, bins=50, alpha=0.7, edgecolor='black', color='lightgreen')
+    axes[0, 1].axvline(np.median(reasonable_r2), color='green', linestyle='--', linewidth=2,
+                       label=f'Median: {np.median(reasonable_r2):.3f}')
+    axes[0, 1].axvline(np.percentile(reasonable_r2, 75), color='orange', linestyle='--', linewidth=2,
+                       label=f'75th %ile: {np.percentile(reasonable_r2, 75):.3f}')
+    axes[0, 1].set_xlabel('Feature R² (Original Space)')
+    axes[0, 1].set_ylabel('Frequency')
+    axes[0, 1].set_title(f'Feature R² Distribution ({len(reasonable_r2)}/{len(valid_feature_r2)} features, R² > -10)')
+    axes[0, 1].legend()
+    axes[0, 1].grid(True, alpha=0.3)
+    
+    # 3. Reconstruction scatterplot - subsample for visualization
+    orig_flat = metrics['original'].flatten()
+    recon_flat = metrics['reconstructed'].flatten()
+    
+    # Remove any NaN or infinite values
+    valid_mask = np.isfinite(orig_flat) & np.isfinite(recon_flat)
+    orig_flat = orig_flat[valid_mask]
+    recon_flat = recon_flat[valid_mask]
+    
+    # Subsample for better visualization (use every 100th point if dataset is large)
+    if len(orig_flat) > 10000:
+        subsample_idx = np.arange(0, len(orig_flat), len(orig_flat)//10000)
+        orig_sample = orig_flat[subsample_idx]
+        recon_sample = recon_flat[subsample_idx]
     else:
-        fig, axes = plt.subplots(2, 3, figsize=(18, 12))  # 2 rows: metrics, features
-        spaces = [('norm', 'Model Space')]
+        orig_sample = orig_flat
+        recon_sample = recon_flat
     
-    for space_idx, (space_suffix, space_name) in enumerate(spaces):
-        row_offset = space_idx * 2 if metrics['has_original_space'] else 0
-        
-        mae_key = f'mae_per_sample_{space_suffix}'
-        mse_key = f'mse_per_sample_{space_suffix}'
-        mean_mae_key = f'mean_mae_{space_suffix}'
-        mean_mse_key = f'mean_mse_{space_suffix}'
-        original_key = f'original_{space_suffix}'
-        reconstructed_key = f'reconstructed_{space_suffix}'
+    axes[1, 0].scatter(orig_sample, recon_sample, alpha=0.5, s=1, color='blue')
+    axes[1, 0].plot([orig_sample.min(), orig_sample.max()], [orig_sample.min(), orig_sample.max()], 
+                    'r--', linewidth=2, label='Perfect Reconstruction')
+    axes[1, 0].set_xlabel('Original Feature Values')
+    axes[1, 0].set_ylabel('Reconstructed Feature Values')
+    axes[1, 0].set_title(f'Reconstruction Scatterplot\n(Subsample: {len(orig_sample):,} points)')
+    axes[1, 0].legend()
+    axes[1, 0].grid(True, alpha=0.3)
     
-    # MAE histogram
-        axes[row_offset, 0].hist(metrics[mae_key], bins=50, alpha=0.7, edgecolor='black')
-        axes[row_offset, 0].axvline(metrics[mean_mae_key], color='red', linestyle='--', 
-                          label=f'Mean: {metrics[mean_mae_key]:.4f}')
-        axes[row_offset, 0].set_xlabel('MAE per Sample')
-        axes[row_offset, 0].set_ylabel('Frequency')
-        axes[row_offset, 0].set_title(f'MAE Distribution - {space_name}')
-        axes[row_offset, 0].legend()
-        axes[row_offset, 0].grid(True, alpha=0.3)
+    # 4. Feature correlation plot - show correlation between original and reconstructed per feature
+    feature_corr = []
+    for j in range(metrics['original'].shape[1]):
+        orig_feature = metrics['original'][:, j]
+        recon_feature = metrics['reconstructed'][:, j]
+        if np.var(orig_feature) > 1e-10 and np.var(recon_feature) > 1e-10:
+            corr = np.corrcoef(orig_feature, recon_feature)[0, 1]
+            if np.isfinite(corr):
+                feature_corr.append(corr)
     
-    # MSE histogram
-        axes[row_offset, 1].hist(metrics[mse_key], bins=50, alpha=0.7, edgecolor='black')
-        axes[row_offset, 1].axvline(metrics[mean_mse_key], color='red', linestyle='--', 
-                          label=f'Mean: {metrics[mean_mse_key]:.4f}')
-        axes[row_offset, 1].set_xlabel('MSE per Sample')
-        axes[row_offset, 1].set_ylabel('Frequency')
-        axes[row_offset, 1].set_title(f'MSE Distribution - {space_name}')
-        axes[row_offset, 1].legend()
-        axes[row_offset, 1].grid(True, alpha=0.3)
-    
-    # Reconstruction scatter plot (first feature)
-        sample_size = min(1000, len(metrics[original_key]))
-        idx = np.random.choice(len(metrics[original_key]), sample_size, replace=False)
-        orig_sample = metrics[original_key][idx, 0]
-        recon_sample = metrics[reconstructed_key][idx, 0]
-    
-        axes[row_offset, 2].scatter(orig_sample, recon_sample, alpha=0.5)
-    min_val, max_val = min(orig_sample.min(), recon_sample.min()), max(orig_sample.max(), recon_sample.max())
-        axes[row_offset, 2].plot([min_val, max_val], [min_val, max_val], 'r--', lw=2)
-        axes[row_offset, 2].set_xlabel('Original Feature 0')
-        axes[row_offset, 2].set_ylabel('Reconstructed Feature 0')
-        axes[row_offset, 2].set_title(f'Reconstruction Quality - {space_name}')
-        axes[row_offset, 2].grid(True, alpha=0.3)
-    
-        # Feature-wise reconstruction error (second row for each space)
-        feature_mae = np.mean(np.abs(metrics[original_key] - metrics[reconstructed_key]), axis=0)
-        row_idx = row_offset + 1
-        
-        axes[row_idx, 0].plot(feature_mae)
-        axes[row_idx, 0].set_xlabel('Feature Index')
-        axes[row_idx, 0].set_ylabel('Mean Absolute Error')
-        axes[row_idx, 0].set_title(f'Per-Feature Reconstruction Error - {space_name}')
-        axes[row_idx, 0].grid(True, alpha=0.3)
-    
-    # Correlation between original and reconstructed
-    correlations = []
-        for i in range(metrics[original_key].shape[1]):  # All features instead of limiting to 100
-            corr = np.corrcoef(metrics[original_key][:, i], metrics[reconstructed_key][:, i])[0, 1]
-            if not np.isnan(corr):  # Only add valid correlations
-        correlations.append(corr)
-    
-        axes[row_idx, 1].hist(correlations, bins=30, alpha=0.7, edgecolor='black')
-        axes[row_idx, 1].axvline(np.mean(correlations), color='red', linestyle='--', 
-                      label=f'Mean: {np.mean(correlations):.3f}')
-        axes[row_idx, 1].set_xlabel('Correlation Coefficient')
-        axes[row_idx, 1].set_ylabel('Frequency')
-        axes[row_idx, 1].set_title(f'Feature-wise Correlation - {space_name}')
-        axes[row_idx, 1].legend()
-        axes[row_idx, 1].grid(True, alpha=0.3)
-        
-        # Latent space distribution (for first space only)
-        if space_idx == 0:
-            latent_sample = metrics['latent'][idx, :2] if len(metrics['latent'].shape) > 1 and metrics['latent'].shape[1] >= 2 else metrics['latent'][idx, :1]
-            
-            if len(latent_sample.shape) > 1 and latent_sample.shape[1] >= 2:
-                axes[row_idx, 2].scatter(latent_sample[:, 0], latent_sample[:, 1], alpha=0.6)
-                axes[row_idx, 2].set_xlabel('Latent Dimension 0')
-                axes[row_idx, 2].set_ylabel('Latent Dimension 1')
-                axes[row_idx, 2].set_title('Latent Space Distribution')
-                axes[row_idx, 2].grid(True, alpha=0.3)
-            else:
-                # Handle 1D latent case
-                axes[row_idx, 2].hist(latent_sample.flatten(), bins=30, alpha=0.7, edgecolor='black')
-                axes[row_idx, 2].set_xlabel('Latent Value')
-                axes[row_idx, 2].set_ylabel('Frequency')
-                axes[row_idx, 2].set_title('Latent Distribution (1D)')
-                axes[row_idx, 2].grid(True, alpha=0.3)
+    feature_corr = np.array(feature_corr)
+    axes[1, 1].hist(feature_corr, bins=50, alpha=0.7, edgecolor='black', color='lightcoral')
+    axes[1, 1].axvline(np.mean(feature_corr), color='red', linestyle='--', linewidth=2,
+                       label=f'Mean: {np.mean(feature_corr):.3f}')
+    axes[1, 1].axvline(np.median(feature_corr), color='green', linestyle='--', linewidth=2,
+                       label=f'Median: {np.median(feature_corr):.3f}')
+    axes[1, 1].set_xlabel('Feature Correlation (Original vs Reconstructed)')
+    axes[1, 1].set_ylabel('Frequency')
+    axes[1, 1].set_title(f'Feature-wise Correlation Distribution\n({len(feature_corr)} features)')
+    axes[1, 1].legend()
+    axes[1, 1].grid(True, alpha=0.3)
     
     plt.tight_layout()
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Reconstruction quality plot saved to: {save_path}")
+        print(f"Reconstruction quality plots saved to: {save_path}")
     
     plt.show()
 
 
 def analyze_latent_space(metrics: dict, save_path: str = None):
-    """Analyze the learned latent space."""
+    """Analyze the learned latent space with reconstruction error coloring."""
     latent = metrics['latent']
+    sample_mae = metrics['sample_mae']
     
     fig, axes = plt.subplots(2, 3, figsize=(18, 12))
     
-    # PCA on latent space
+    # PCA on latent space colored by reconstruction error
     pca = PCA(n_components=2, random_state=42)
     latent_pca = pca.fit_transform(latent)
     
-    axes[0, 0].scatter(latent_pca[:, 0], latent_pca[:, 1], alpha=0.6)
+    scatter1 = axes[0, 0].scatter(latent_pca[:, 0], latent_pca[:, 1], 
+                                 c=sample_mae, cmap='viridis', alpha=0.7, s=20)
     axes[0, 0].set_xlabel(f'PC1 ({pca.explained_variance_ratio_[0]:.3f})')
     axes[0, 0].set_ylabel(f'PC2 ({pca.explained_variance_ratio_[1]:.3f})')
-    axes[0, 0].set_title('PCA of Latent Space')
+    axes[0, 0].set_title('PCA - Colored by Reconstruction Error')
     axes[0, 0].grid(True, alpha=0.3)
+    plt.colorbar(scatter1, ax=axes[0, 0], label='Sample MAE')
     
-    # t-SNE on latent space (subsample for efficiency)
+    # t-SNE on latent space colored by reconstruction error (subsample for efficiency)
     if len(latent) > 5000:
         idx = np.random.choice(len(latent), 5000, replace=False)
         latent_subset = latent[idx]
+        mae_subset = sample_mae[idx]
     else:
         latent_subset = latent
+        mae_subset = sample_mae
+        idx = np.arange(len(latent))
     
-    tsne = TSNE(n_components=2, random_state=42, perplexity=30)
+    tsne = TSNE(n_components=2, random_state=42, perplexity=min(30, len(latent_subset)-1))
     latent_tsne = tsne.fit_transform(latent_subset)
     
-    axes[0, 1].scatter(latent_tsne[:, 0], latent_tsne[:, 1], alpha=0.6)
+    scatter2 = axes[0, 1].scatter(latent_tsne[:, 0], latent_tsne[:, 1], 
+                                 c=mae_subset, cmap='viridis', alpha=0.7, s=20)
     axes[0, 1].set_xlabel('t-SNE 1')
     axes[0, 1].set_ylabel('t-SNE 2')
-    axes[0, 1].set_title('t-SNE of Latent Space')
+    axes[0, 1].set_title('t-SNE - Colored by Reconstruction Error')
     axes[0, 1].grid(True, alpha=0.3)
+    plt.colorbar(scatter2, ax=axes[0, 1], label='Sample MAE')
     
     # Latent dimension statistics
     latent_means = np.mean(latent, axis=0)
     latent_stds = np.std(latent, axis=0)
     
-    axes[0, 2].plot(latent_means, label='Mean')
-    axes[0, 2].plot(latent_stds, label='Std')
+    axes[0, 2].plot(latent_means, label='Mean', color='blue', linewidth=2)
+    axes[0, 2].plot(latent_stds, label='Std', color='orange', linewidth=2)
     axes[0, 2].set_xlabel('Latent Dimension')
     axes[0, 2].set_ylabel('Value')
     axes[0, 2].set_title('Latent Dimension Statistics')
     axes[0, 2].legend()
     axes[0, 2].grid(True, alpha=0.3)
     
+    # Reconstruction error vs latent magnitude
+    latent_norms = np.linalg.norm(latent, axis=1)
+    axes[1, 0].scatter(latent_norms, sample_mae, alpha=0.6, s=10)
+    axes[1, 0].set_xlabel('Latent Vector Magnitude')
+    axes[1, 0].set_ylabel('Sample MAE')
+    axes[1, 0].set_title('Reconstruction Error vs Latent Magnitude')
+    axes[1, 0].grid(True, alpha=0.3)
+    
     # Clustering analysis
-    n_clusters_range = range(2, 11)
+    n_clusters_range = range(2, min(11, len(latent)//10 + 2))  # Ensure reasonable cluster range
     silhouette_scores = []
     
     for n_clusters in n_clusters_range:
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-        cluster_labels = kmeans.fit_predict(latent)
-        silhouette_avg = silhouette_score(latent, cluster_labels)
-        silhouette_scores.append(silhouette_avg)
+        if n_clusters < len(latent):
+            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            cluster_labels = kmeans.fit_predict(latent)
+            silhouette_avg = silhouette_score(latent, cluster_labels)
+            silhouette_scores.append(silhouette_avg)
+        else:
+            silhouette_scores.append(0)
     
-    axes[1, 0].plot(n_clusters_range, silhouette_scores, 'o-')
-    axes[1, 0].set_xlabel('Number of Clusters')
-    axes[1, 0].set_ylabel('Silhouette Score')
-    axes[1, 0].set_title('Clustering Quality in Latent Space')
-    axes[1, 0].grid(True, alpha=0.3)
+    if silhouette_scores:
+        axes[1, 1].plot(n_clusters_range, silhouette_scores, 'o-', linewidth=2, markersize=6)
+        axes[1, 1].set_xlabel('Number of Clusters')
+        axes[1, 1].set_ylabel('Silhouette Score')
+        axes[1, 1].set_title('Clustering Quality in Latent Space')
+        axes[1, 1].grid(True, alpha=0.3)
+        
+        # Best clustering result
+        best_n_clusters = n_clusters_range[np.argmax(silhouette_scores)]
+        best_silhouette_score = max(silhouette_scores)
+    else:
+        axes[1, 1].text(0.5, 0.5, 'Insufficient data for clustering', 
+                       ha='center', va='center', transform=axes[1, 1].transAxes)
+        best_n_clusters = 2
+        best_silhouette_score = 0
     
-    # Best clustering visualization
-    best_n_clusters = n_clusters_range[np.argmax(silhouette_scores)]
-    kmeans = KMeans(n_clusters=best_n_clusters, random_state=42, n_init=10)
-    cluster_labels = kmeans.fit_predict(latent)
-    
-    scatter = axes[1, 1].scatter(latent_pca[:, 0], latent_pca[:, 1], 
-                                c=cluster_labels, alpha=0.6, cmap='tab10')
-    axes[1, 1].set_xlabel(f'PC1 ({pca.explained_variance_ratio_[0]:.3f})')
-    axes[1, 1].set_ylabel(f'PC2 ({pca.explained_variance_ratio_[1]:.3f})')
-    axes[1, 1].set_title(f'Clusters in Latent Space (k={best_n_clusters})')
-    plt.colorbar(scatter, ax=axes[1, 1])
-    
-    # Latent space interpolation
-    # Sample two random points and interpolate between them
-    idx1, idx2 = np.random.choice(len(latent), 2, replace=False)
-    point1, point2 = latent[idx1], latent[idx2]
-    
-    # Create interpolation
-    alphas = np.linspace(0, 1, 10)
-    interpolated_points = []
-    for alpha in alphas:
-        point = (1 - alpha) * point1 + alpha * point2
-        interpolated_points.append(point)
-    
-    interpolated_points = np.array(interpolated_points)
-    interpolated_pca = pca.transform(interpolated_points)
-    
-    axes[1, 2].scatter(latent_pca[:, 0], latent_pca[:, 1], alpha=0.3, c='gray', s=1)
-    axes[1, 2].plot(interpolated_pca[:, 0], interpolated_pca[:, 1], 'ro-', linewidth=2, markersize=6)
-    axes[1, 2].set_xlabel(f'PC1 ({pca.explained_variance_ratio_[0]:.3f})')
-    axes[1, 2].set_ylabel(f'PC2 ({pca.explained_variance_ratio_[1]:.3f})')
-    axes[1, 2].set_title('Latent Space Interpolation')
+    # Latent space distribution (show actual values distribution)
+    latent_flat = latent.flatten()
+    axes[1, 2].hist(latent_flat, bins=50, alpha=0.7, edgecolor='black', color='lightcoral')
+    axes[1, 2].axvline(np.mean(latent_flat), color='red', linestyle='--', linewidth=2,
+                      label=f'Mean: {np.mean(latent_flat):.3f}')
+    axes[1, 2].set_xlabel('Latent Values')
+    axes[1, 2].set_ylabel('Frequency')
+    axes[1, 2].set_title('Latent Space Value Distribution')
+    axes[1, 2].legend()
     axes[1, 2].grid(True, alpha=0.3)
     
     plt.tight_layout()
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Latent space analysis plot saved to: {save_path}")
+        print(f"Clean latent space analysis plot saved to: {save_path}")
     
     plt.show()
     
     return {
         'best_n_clusters': best_n_clusters,
-        'best_silhouette_score': max(silhouette_scores),
+        'best_silhouette_score': best_silhouette_score,
         'pca_explained_variance': pca.explained_variance_ratio_[:2],
-        'cluster_labels': cluster_labels
+        'latent_magnitude_correlation': np.corrcoef(latent_norms, sample_mae)[0, 1] if len(latent_norms) > 1 else 0
     }
 
 
 def generate_report(model: JUMPVAE, metrics: dict, latent_analysis: dict, save_path: str = None):
-    """Generate a comprehensive evaluation report."""
+    """Generate a simplified evaluation report focusing on meaningful metrics."""
+    
+    # Calculate R² quality categories
+    feature_r2_clean = metrics['feature_r2'][~np.isnan(metrics['feature_r2'])]
+    excellent_r2 = np.sum(feature_r2_clean > 0.9)
+    good_r2 = np.sum(feature_r2_clean > 0.8)
+    poor_r2 = np.sum(feature_r2_clean < 0.5)
+    
+    # Calculate robust statistics (less sensitive to outliers)
+    median_r2 = np.median(feature_r2_clean)
+    percentile_75_r2 = np.percentile(feature_r2_clean, 75)
+    extreme_negative_count = np.sum(feature_r2_clean < -10)
+    
     report = f"""
-# VAE Model Evaluation Report
+# Simplified VAE Model Evaluation Report
 
 ## Model Architecture
 - Input Dimension: {model.hparams.input_dim}
@@ -361,101 +367,125 @@ def generate_report(model: JUMPVAE, metrics: dict, latent_analysis: dict, save_p
 - Normalization: {model.hparams.norm_type}
 - Beta (KL weight): {model.hparams.beta}
 
-## Reconstruction Metrics
+## Reconstruction Metrics (Original Space)
 
-### Normalized Space (Training Space)
-- Mean MAE: {metrics['mean_mae_norm']:.6f} ± {metrics['std_mae_norm']:.6f}
-- Mean MSE: {metrics['mean_mse_norm']:.6f} ± {metrics['std_mse_norm']:.6f}
-- Number of samples: {len(metrics['mae_per_sample_norm']):,}
-"""
-    
-    if metrics['has_original_space']:
-        report += f"""
-### Original Space (Interpretable Units)
-- Mean MAE: {metrics['mean_mae_orig']:.6f} ± {metrics['std_mae_orig']:.6f}
-- Mean MSE: {metrics['mean_mse_orig']:.6f} ± {metrics['std_mse_orig']:.6f}
+### Sample-wise Performance
+- Mean MAE: {metrics['mean_sample_mae']:.6f} ± {metrics['std_sample_mae']:.6f}
+- Number of samples: {len(metrics['sample_mae']):,}
 
-### Interpretation Notes
-- **Normalized Space**: Reflects what the model actually optimized for during training
-- **Original Space**: Shows reconstruction quality in original measurement units
-- **Ratio (Orig/Norm)**: MAE ratio = {metrics['mean_mae_orig']/metrics['mean_mae_norm']:.2f}, MSE ratio = {metrics['mean_mse_orig']/metrics['mean_mse_norm']:.2f}
-"""
-    else:
-        report += """
-### Note
-- Only normalized/model space metrics available (no normalization parameters found)
-"""
-    
-    # Compute feature correlations for the appropriate space
-    original_key = 'original_orig' if metrics['has_original_space'] else 'original_norm'
-    reconstructed_key = 'reconstructed_orig' if metrics['has_original_space'] else 'reconstructed_norm'
-    
-    correlations = []
-    for i in range(metrics[original_key].shape[1]):  # All features instead of limiting to 100
-        corr = np.corrcoef(metrics[original_key][:, i], metrics[reconstructed_key][:, i])[0, 1]
-        if not np.isnan(corr):  # Only add valid correlations
-            correlations.append(corr)
-    
-    report += f"""
+### Feature-wise Performance  
+- Mean R²: {metrics['mean_feature_r2']:.6f} ± {metrics['std_feature_r2']:.6f}
+- **Median R² (robust)**: {median_r2:.3f}
+- **75th percentile R²**: {percentile_75_r2:.3f}
+- Number of features: {len(metrics['feature_r2']):,}
+
+## Feature Reconstruction Quality (R² Analysis)
+- Features with excellent reconstruction (R² > 0.9): {excellent_r2} / {len(feature_r2_clean)} ({excellent_r2/len(feature_r2_clean)*100:.1f}%)
+- Features with good reconstruction (R² > 0.8): {good_r2} / {len(feature_r2_clean)} ({good_r2/len(feature_r2_clean)*100:.1f}%)
+- Features with poor reconstruction (R² < 0.5): {poor_r2} / {len(feature_r2_clean)} ({poor_r2/len(feature_r2_clean)*100:.1f}%)
+
+### ⚠️ Mean vs. Median Discrepancy Analysis
+- **Features with extreme negative R² (< -10)**: {extreme_negative_count} / {len(feature_r2_clean)} ({extreme_negative_count/len(feature_r2_clean)*100:.1f}%)
+- **Note**: The very negative mean R² is caused by {extreme_negative_count} features with extreme outlier values
+- **Recommendation**: Focus on median R² ({median_r2:.3f}) as it's more representative of typical performance
+
 ## Latent Space Analysis
 - Best number of clusters: {latent_analysis['best_n_clusters']}
 - Best silhouette score: {latent_analysis['best_silhouette_score']:.4f}
 - PCA explained variance (PC1, PC2): {latent_analysis['pca_explained_variance'][0]:.4f}, {latent_analysis['pca_explained_variance'][1]:.4f}
+- Latent magnitude vs reconstruction error correlation: {latent_analysis['latent_magnitude_correlation']:.4f}
 
-## Feature Reconstruction Quality"""
-    
-    if correlations:
-        space_name = "Original" if metrics['has_original_space'] else "Normalized"
-        report += f"""
-- Features with excellent reconstruction (correlation > 0.9): {np.sum(np.array(correlations) > 0.9)} / {len(correlations)}
-- Features with good reconstruction (correlation > 0.8): {np.sum(np.array(correlations) > 0.8)} / {len(correlations)}
-- Features with poor reconstruction (correlation < 0.5): {np.sum(np.array(correlations) < 0.5)} / {len(correlations)}
-- Mean correlation in {space_name} space: {np.mean(correlations):.4f}
-"""
-    else:
-        report += """
-- Could not compute feature correlations (insufficient data or NaN values)
-"""
-    
-    report += f"""
 ## Model Parameters
 - Total parameters: {sum(p.numel() for p in model.parameters()):,}
 - Trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}
 
-## Recommendations
+## Performance Assessment
 """
     
-    # Add interpretation-based recommendations
-    if metrics['has_original_space']:
-        mae_ratio = metrics['mean_mae_orig'] / metrics['mean_mae_norm']
-        if mae_ratio > 10:
-            report += "- High error ratio suggests normalization is crucial for this dataset\n"
-        elif mae_ratio < 2:
-            report += "- Low error ratio suggests features are naturally well-scaled\n"
-        
-        if metrics['mean_mae_orig'] < 0.1:
-            report += "- Excellent reconstruction quality in original space\n"
-        elif metrics['mean_mae_orig'] < 0.5:
-            report += "- Good reconstruction quality in original space\n"
-        else:
-            report += "- Consider improving model architecture or increasing training\n"
+    # Add performance-based recommendations
+    if metrics['mean_sample_mae'] < 1.0:
+        report += "- Low reconstruction error in original space\n"
+    elif metrics['mean_sample_mae'] < 5.0:
+        report += "- Moderate reconstruction error in original space\n"
+    else:
+        report += "- High reconstruction error - model may need more capacity or training\n"
+    
+    # Use median R² for performance assessment (more robust than mean)
+    if median_r2 > 0.8:
+        report += f"- Excellent feature reconstruction quality (Median R² = {median_r2:.3f} > 0.8)\n"
+    elif median_r2 > 0.6:
+        report += f"- Good feature reconstruction quality (Median R² = {median_r2:.3f} > 0.6)\n"
+    elif median_r2 > 0.4:
+        report += f"- Moderate feature reconstruction quality (Median R² = {median_r2:.3f} > 0.4)\n"
+    else:
+        report += f"- Poor feature reconstruction (Median R² = {median_r2:.3f}) - consider model improvements\n"
+    
+    # Additional note about mean vs median
+    if extreme_negative_count > 0:
+        report += f"- **Note**: Mean R² ({metrics['mean_feature_r2']:.3f}) is misleading due to {extreme_negative_count} extreme outliers\n"
+    
+    if excellent_r2 / len(feature_r2_clean) > 0.8:
+        report += "- Most features reconstructed excellently (>80% with R² > 0.9)\n"
+    elif excellent_r2 / len(feature_r2_clean) > 0.6:
+        report += "- Many features reconstructed well (>60% with R² > 0.9)\n"
+    else:
+        report += "- Feature reconstruction quality varies significantly\n"
     
     if latent_analysis['best_silhouette_score'] > 0.5:
         report += "- Latent space shows good clustering structure\n"
-    elif latent_analysis['best_silhouette_score'] < 0.2:
+    elif latent_analysis['best_silhouette_score'] > 0.2:
+        report += "- Latent space shows moderate clustering structure\n"
+    else:
         report += "- Latent space shows poor clustering - consider different architectures\n"
     
-    if correlations and np.mean(correlations) > 0.8:
-        report += "- High feature-wise correlations indicate good reconstruction fidelity\n"
-    elif correlations and np.mean(correlations) < 0.5:
-        report += "- Low feature correlations suggest model may need more capacity or training\n"
+    abs_correlation = abs(latent_analysis['latent_magnitude_correlation'])
+    if abs_correlation > 0.5:
+        report += f"- Strong correlation ({latent_analysis['latent_magnitude_correlation']:.3f}) between latent magnitude and reconstruction error\n"
+    elif abs_correlation > 0.2:
+        report += f"- Moderate correlation ({latent_analysis['latent_magnitude_correlation']:.3f}) between latent magnitude and reconstruction error\n"
+    else:
+        report += "- Weak correlation between latent magnitude and reconstruction error\n"
     
     if save_path:
         with open(save_path, 'w') as f:
             f.write(report)
-        print(f"Report saved to: {save_path}")
+        print(f"Simplified evaluation report saved to: {save_path}")
     
     print(report)
+
+
+def load_saved_normalization_params(checkpoint_path: str, config_experiment_name: str, log_dir: str):
+    """Load saved normalization parameters to avoid recomputing from huge dataset."""
+    # Try to find normalization file in the same directory as checkpoint
+    checkpoint_dir = os.path.dirname(checkpoint_path)
+    experiment_dir = os.path.dirname(checkpoint_dir)  # Go up from checkpoints/ to experiment/
+    normalization_path = os.path.join(experiment_dir, 'normalization_params.npz')
+    
+    # Fallback: try constructing path from log_dir and experiment name
+    if not os.path.exists(normalization_path):
+        normalization_path = os.path.join(log_dir, config_experiment_name, 'normalization_params.npz')
+    
+    if os.path.exists(normalization_path):
+        print(f"📂 Loading saved normalization parameters from: {normalization_path}")
+        norm_data = np.load(normalization_path)
+        
+        params = {
+            'feature_mean': norm_data['feature_mean'],
+            'feature_std': norm_data['feature_std'],
+            'feature_dim': int(norm_data['feature_dim']),
+            'feature_cols': norm_data['feature_cols'].tolist()
+        }
+        
+        print(f"✅ Loaded normalization parameters:")
+        print(f"   Feature mean shape: {params['feature_mean'].shape}")
+        print(f"   Feature std shape: {params['feature_std'].shape}")
+        print(f"   Feature dimension: {params['feature_dim']}")
+        
+        return params
+    else:
+        print(f"⚠️  Normalization file not found at: {normalization_path}")
+        print(f"   Will fall back to computing from dataset (slower)")
+        return None
 
 
 def main():
@@ -486,14 +516,48 @@ def main():
     print(f"Model loaded successfully")
     print(f"Model has {sum(p.numel() for p in model.parameters()):,} parameters")
     
-    # Setup data
-    print("Setting up data...")
-    data_module = JUMPDataModule(config)
-    data_module.setup()
+    # Try to load saved normalization parameters (FAST PATH)
+    saved_norm_params = load_saved_normalization_params(
+        args.checkpoint_path, 
+        config.logging['experiment_name'], 
+        config.logging['log_dir']
+    )
     
-    # Use test set for evaluation
-    test_dataloader = data_module.test_dataloader()
-    print(f"Test set size: {len(test_dataloader.dataset)}")
+    if saved_norm_params is not None:
+        # FAST PATH: Use saved normalization parameters without loading huge dataset
+        print("🚀 Using saved normalization parameters (fast path)")
+        
+        # Create a minimal test-only data module
+        print("Setting up test data only...")
+        data_module = JUMPDataModule(config)
+        data_module.setup()
+        test_dataloader = data_module.test_dataloader()
+        
+        # Override normalization parameters in test dataset
+        test_dataset = test_dataloader.dataset
+        if hasattr(test_dataset, 'dataset'):
+            # Handle subset datasets (likely case)
+            test_dataset.dataset.feature_mean = saved_norm_params['feature_mean']
+            test_dataset.dataset.feature_std = saved_norm_params['feature_std']
+            print("✅ Applied saved normalization parameters to test subset dataset")
+        elif hasattr(test_dataset, 'feature_mean'):
+            # Direct dataset
+            test_dataset.feature_mean = saved_norm_params['feature_mean']
+            test_dataset.feature_std = saved_norm_params['feature_std']
+            print("✅ Applied saved normalization parameters to test dataset")
+        
+        print(f"Test set size: {len(test_dataloader.dataset)}")
+        
+    else:
+        # SLOW PATH: Fallback to computing normalization from full dataset
+        print("⚠️  Using slow path: computing normalization from full dataset")
+        print("Setting up data...")
+        data_module = JUMPDataModule(config)
+        data_module.setup()
+        
+        # Use test set for evaluation
+        test_dataloader = data_module.test_dataloader()
+        print(f"Test set size: {len(test_dataloader.dataset)}")
     
     # Compute metrics
     print("Computing reconstruction metrics...")
@@ -517,25 +581,12 @@ def main():
     metrics_path = os.path.join(args.output_dir, "metrics.npz")
     save_dict = {
         'latent_representations': metrics['latent'],
-        'cluster_labels': latent_analysis['cluster_labels']
+        'sample_mae': metrics['sample_mae'],
+        'feature_r2': metrics['feature_r2'],
     }
     
-    # Save metrics for both spaces if available
-    if metrics['has_original_space']:
-        save_dict.update({
-            'mae_per_sample_norm': metrics['mae_per_sample_norm'],
-            'mse_per_sample_norm': metrics['mse_per_sample_norm'],
-            'mae_per_sample_orig': metrics['mae_per_sample_orig'],
-            'mse_per_sample_orig': metrics['mse_per_sample_orig'],
-        })
-    else:
-        save_dict.update({
-            'mae_per_sample': metrics['mae_per_sample_norm'],
-            'mse_per_sample': metrics['mse_per_sample_norm'],
-        })
-    
     np.savez(metrics_path, **save_dict)
-    print(f"Metrics saved to: {metrics_path}")
+    print(f"Simplified metrics saved to: {metrics_path}")
     
     print(f"Evaluation completed! Results saved to: {args.output_dir}")
 

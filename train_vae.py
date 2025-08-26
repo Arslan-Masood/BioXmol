@@ -169,12 +169,24 @@ class Config:
         
         return splits if splits else None
     
+    @property
+    def modality(self) -> str:
+        """Get the modality to train on ('jump_cp' or 'genomic')."""
+        return self.data.get('modality', 'jump_cp')  # Default to JUMP Cell Painting
+    
     def print_summary(self):
         """Print configuration summary."""
         print("\n" + "="*60)
         print("Training Configuration Summary")
         print("="*60)
-        print(f"Data path: {self.data['data_path']}")
+        print(f"Modality: {self.modality.upper()}")
+        if self.modality == 'genomic':
+            genomic_path = self.data.get('genomic_data_path', self.data['data_path'])
+            print(f"Genomic data path: {genomic_path}")
+            if self.data.get('target_cell_line'):
+                print(f"Target cell line: {self.data['target_cell_line']}")
+        else:
+            print(f"Cell painting data path: {self.data['data_path']}")
         print(f"Model: {self.model['model_type'].upper()} with {self.model['architecture']} architecture")
         print(f"Latent dimension: {self.model['latent_dim']}")
         print(f"Batch size: {self.data['batch_size']}")
@@ -213,6 +225,9 @@ class JUMPCellPaintingDataset(Dataset):
         else:
             raise ValueError("SMILES column not found in the dataset")
         
+        # Pre-compute molecule indices for faster sampling
+        self._precompute_indices()
+        
         print(f"Dataset created with {len(self.unique_smiles)} unique molecules")
     
     def _load_data(self):
@@ -239,15 +254,24 @@ class JUMPCellPaintingDataset(Dataset):
         print(f"Feature columns: {len(self.feature_cols)}")
         self.feature_dim = len(self.feature_cols)
         
-        # Store normalization parameters
+        # Extract features as numpy array for fast access
+        self.features_array = self.df[self.feature_cols].values.astype(np.float32)
+        
+        # Handle NaN values once during initialization
+        self.features_array = np.where(np.isnan(self.features_array), 0.0, self.features_array)
+        
+        # Store normalization parameters and pre-normalize if enabled
         if self.normalize:
-            features = self.df[self.feature_cols].values.astype(np.float32)
-            
-            self.feature_mean = np.mean(features, axis=0, keepdims=True)
-            self.feature_std = np.std(features, axis=0, keepdims=True)
+            self.feature_mean = np.mean(self.features_array, axis=0, keepdims=True)
+            self.feature_std = np.std(self.features_array, axis=0, keepdims=True)
             # Avoid division by zero
             self.feature_std = np.where(self.feature_std == 0, 1.0, self.feature_std)
-            print("Computed normalization statistics")
+            
+            # Pre-normalize all features for faster access
+            self.features_array = (self.features_array - self.feature_mean) / self.feature_std
+            print("Computed normalization statistics and pre-normalized all features")
+        else:
+            print("Features extracted as numpy array (no normalization)")
     
     def _filter_molecules(self):
         """Filter out excluded molecules from the dataset."""
@@ -282,27 +306,188 @@ class JUMPCellPaintingDataset(Dataset):
         if self.df.shape[0] < original_shape[0] * 0.5:
             print(f"⚠️  WARNING: Filtering removed {((original_shape[0] - self.df.shape[0]) / original_shape[0] * 100):.1f}% of data")
     
+    def _precompute_indices(self):
+        """Pre-compute indices for each molecule to eliminate pandas operations in __getitem__."""
+        print("Pre-computing molecule indices...")
+        self.smiles_to_indices = {}
+        for smiles in self.unique_smiles:
+            indices = self.df[self.df[self.smiles_col] == smiles].index.tolist()
+            self.smiles_to_indices[smiles] = indices
+        
+        # Initialize a single random number generator
+        self.rng = np.random.default_rng(self.random_seed)
+        print(f"Pre-computed indices for {len(self.unique_smiles)} molecules")
+    
     def __len__(self):
         return len(self.unique_smiles)
     
     def __getitem__(self, index):
-        """Get a molecule-wise sample."""
-        # Create a new, isolated random number generator for this specific item fetch.
-        # ensuring samples are different each time.
-        rng = np.random.default_rng()
+        """Get a molecule-wise sample - fully optimized with no pandas operations."""
         smiles = self.unique_smiles[index]
-        # Get all rows for this SMILES
-        molecule_rows = self.df[self.df[self.smiles_col] == smiles]
-        # Sample one row randomly
-        sampled_row = molecule_rows.sample(1, random_state=rng.integers(0, 2**32-1))
-        features = sampled_row[self.feature_cols].values.astype(np.float32).flatten()
         
-        # Handle NaN values by replacing with 0
-        features = np.where(np.isnan(features), 0.0, features)
+        # Get pre-computed row indices for this SMILES (no pandas filtering!)
+        row_indices = self.smiles_to_indices[smiles]
         
-        # Apply normalization if enabled
+        # Use your suggested approach for proper randomness with seed_everything()
+        random_state = self.rng.integers(0, 2**32-1)
+        temp_rng = np.random.default_rng(random_state)
+        selected_row_idx = temp_rng.choice(row_indices)
+        
+        # Get features directly from pre-processed numpy array (no pandas!)
+        features = self.features_array[selected_row_idx].copy()
+        
+        return torch.from_numpy(features)
+
+
+class GenomicDataset(Dataset):
+    """Dataset class for genomic (LINCS L1000) data that returns molecule-wise samples."""
+    
+    def __init__(self, config: Config):
+        """Initialize genomic dataset from config."""
+        data_config = config.data
+        
+        # Use genomic_data_path if specified, otherwise fallback to data_path
+        self.data_path = data_config.get('genomic_data_path', data_config['data_path'])
+        self.normalize = data_config['normalize']
+        self.random_seed = config.training['seed']
+        
+        # Molecule filtering (exclude controls/specific molecules)
+        self.exclude_molecules = data_config.get('exclude_molecules', [])
+        self.molecule_id_column = data_config.get('molecule_id_column', 'Metadata_InChIKey')
+        
+        # Cell line filtering options
+        self.target_cell_line = data_config.get('target_cell_line', None)  # Filter to specific cell line
+        self.cell_line_col = "Metadata_cell_iname"
+        
+        # Load and process data
+        self._load_data()
+        
+        # Set up for molecule-wise sampling
+        self.smiles_col = "Metadata_SMILES"
+        if self.smiles_col in self.df.columns:
+            self.unique_smiles = self.df[self.smiles_col].dropna().unique().tolist()
+        else:
+            raise ValueError("SMILES column not found in the genomic dataset")
+        
+        # Pre-compute molecule indices for faster sampling
+        self._precompute_indices()
+        
+        print(f"Genomic dataset created with {len(self.unique_smiles)} unique molecules")
+        if self.target_cell_line:
+            print(f"Filtered to cell line: {self.target_cell_line}")
+    
+    def _load_data(self):
+        """Load and preprocess the genomic data."""
+        print(f"Loading genomic data from {self.data_path}")
+        
+        # Load data (genomic data is typically in parquet format)
+        if self.data_path.endswith('.parquet'):
+            self.df = pd.read_parquet(self.data_path)
+        elif self.data_path.endswith('.csv'):
+            self.df = pd.read_csv(self.data_path)
+        else:
+            raise ValueError("Genomic data file must be .parquet or .csv")
+        
+        print(f"Loaded genomic dataframe with shape: {self.df.shape}")
+        
+        # Filter to specific cell line if specified
+        if self.target_cell_line:
+            if self.cell_line_col in self.df.columns:
+                original_shape = self.df.shape[0]
+                self.df = self.df[self.df[self.cell_line_col] == self.target_cell_line].reset_index(drop=True)
+                print(f"Filtered to {self.target_cell_line}: {original_shape} → {self.df.shape[0]} rows")
+            else:
+                print(f"Warning: Cell line column '{self.cell_line_col}' not found, skipping cell line filtering")
+        
+        # Filter out excluded molecules if specified
+        if self.exclude_molecules:
+            self._filter_molecules()
+        
+        # Get feature columns (non-metadata) - genomic features
+        self.feature_cols = [c for c in self.df.columns if 'Metadata' not in c]
+        
+        print(f"Genomic feature columns: {len(self.feature_cols)}")
+        self.feature_dim = len(self.feature_cols)
+        
+        # Extract features as numpy array for fast access
+        self.features_array = self.df[self.feature_cols].values.astype(np.float32)
+        
+        # Handle NaN values once during initialization
+        self.features_array = np.where(np.isnan(self.features_array), 0.0, self.features_array)
+        
+        # Store normalization parameters and pre-normalize if enabled
         if self.normalize:
-            features = (features - self.feature_mean.flatten()) / self.feature_std.flatten()
+            self.feature_mean = np.mean(self.features_array, axis=0, keepdims=True)
+            self.feature_std = np.std(self.features_array, axis=0, keepdims=True)
+            # Avoid division by zero
+            self.feature_std = np.where(self.feature_std == 0, 1.0, self.feature_std)
+            
+            # Pre-normalize all features for faster access
+            self.features_array = (self.features_array - self.feature_mean) / self.feature_std
+            print("Computed genomic normalization statistics and pre-normalized all features")
+        else:
+            print("Genomic features extracted as numpy array (no normalization)")
+    
+    def _filter_molecules(self):
+        """Filter out excluded molecules from the genomic dataset."""
+        original_shape = self.df.shape
+        
+        # Check if the specified molecular ID column exists
+        if self.molecule_id_column not in self.df.columns:
+            available_cols = [col for col in self.df.columns if 'Metadata' in col]
+            raise ValueError(
+                f"Molecular ID column '{self.molecule_id_column}' not found in genomic dataset. "
+                f"Available metadata columns: {available_cols}"
+            )
+        
+        before_count = len(self.df)
+        
+        # Filter out molecules in exclude list
+        excluded_mask = self.df[self.molecule_id_column].isin(self.exclude_molecules)
+        excluded_count = excluded_mask.sum()
+        
+        if excluded_count > 0:
+            self.df = self.df[~excluded_mask].reset_index(drop=True)
+            after_count = len(self.df)
+            
+            print(f"Filtered genomic data using {self.molecule_id_column}:")
+            print(f"  - Excluded {excluded_count} rows containing {len(self.exclude_molecules)} control molecules")
+            print(f"  - Dataset size: {before_count} → {after_count} rows")
+        else:
+            print(f"No molecules found to exclude from genomic data using {self.molecule_id_column}")
+        
+        if self.df.shape[0] < original_shape[0] * 0.5:
+            print(f"⚠️  WARNING: Filtering removed {((original_shape[0] - self.df.shape[0]) / original_shape[0] * 100):.1f}% of genomic data")
+    
+    def _precompute_indices(self):
+        """Pre-compute indices for each molecule to eliminate pandas operations in __getitem__."""
+        print("Pre-computing genomic molecule indices...")
+        self.smiles_to_indices = {}
+        for smiles in self.unique_smiles:
+            indices = self.df[self.df[self.smiles_col] == smiles].index.tolist()
+            self.smiles_to_indices[smiles] = indices
+        
+        # Initialize a single random number generator
+        self.rng = np.random.default_rng(self.random_seed)
+        print(f"Pre-computed genomic indices for {len(self.unique_smiles)} molecules")
+    
+    def __len__(self):
+        return len(self.unique_smiles)
+    
+    def __getitem__(self, index):
+        """Get a molecule-wise sample from genomic data - fully optimized with no pandas operations."""
+        smiles = self.unique_smiles[index]
+        
+        # Get pre-computed row indices for this SMILES (no pandas filtering!)
+        row_indices = self.smiles_to_indices[smiles]
+        
+        # Use consistent approach for proper randomness with seed_everything()
+        random_state = self.rng.integers(0, 2**32-1)
+        temp_rng = np.random.default_rng(random_state)
+        selected_row_idx = temp_rng.choice(row_indices)
+        
+        # Get features directly from pre-processed numpy array (no pandas!)
+        features = self.features_array[selected_row_idx].copy()
         
         return torch.from_numpy(features)
 
@@ -370,6 +555,73 @@ class JUMPDataModule(pl.LightningDataModule):
     def test_dataloader(self):
         if self.dataloaders is None:
             raise RuntimeError("setup() must be called before accessing dataloaders")
+        return self.dataloaders.get("test", self.dataloaders.get("val"))  # Use val as test if no test split
+
+
+class GenomicDataModule(pl.LightningDataModule):
+    """Data module for genomic (LINCS L1000) dataset using build_dataloaders with predefined splits."""
+    
+    def __init__(self, config: Config):
+        """Initialize genomic data module from config."""
+        super().__init__()
+        self.config = config
+        
+        # Will be set during setup
+        self.feature_dim = None
+        self.dataloaders = None
+        self.dataset = None
+    
+    def prepare_data(self):
+        """Download or prepare genomic data if needed."""
+        # Check main genomic data path
+        genomic_data_path = self.config.data.get('genomic_data_path', self.config.data['data_path'])
+        if not os.path.exists(genomic_data_path):
+            raise FileNotFoundError(f"Genomic data file not found: {genomic_data_path}")
+        
+        # Check split files if provided
+        splits = self.config.splits
+        if splits:
+            for split_name, split_path in splits.items():
+                if not os.path.exists(split_path):
+                    raise FileNotFoundError(f"Split file not found: {split_path}")
+    
+    def setup(self, stage: str = None):
+        """Load and split genomic data using build_dataloaders."""
+        # Skip setup if already done
+        if self.dataset is not None and self.dataloaders is not None:
+            print("Genomic data module already set up, skipping...")
+            return
+            
+        print("Setting up genomic data module...")
+        
+        # Create genomic dataset
+        self.dataset = GenomicDataset(self.config)
+        self.feature_dim = self.dataset.feature_dim
+        
+        # Build dataloaders using the existing build_dataloaders function
+        self.dataloaders = build_dataloaders(
+            dataset=self.dataset,
+            batch_size=self.config.data['batch_size'],
+            splits=self.config.splits,
+            num_workers=self.config.data['num_workers'],
+            pin_memory=True,
+        )
+        
+        print(f"Genomic data module setup complete. Feature dimension: {self.feature_dim}")
+    
+    def train_dataloader(self):
+        if self.dataloaders is None:
+            raise RuntimeError("setup() must be called before accessing genomic dataloaders")
+        return self.dataloaders.get("train")
+    
+    def val_dataloader(self):
+        if self.dataloaders is None:
+            raise RuntimeError("setup() must be called before accessing genomic dataloaders")
+        return self.dataloaders.get("val")
+    
+    def test_dataloader(self):
+        if self.dataloaders is None:
+            raise RuntimeError("setup() must be called before accessing genomic dataloaders")
         return self.dataloaders.get("test", self.dataloaders.get("val"))  # Use val as test if no test split
 
 
@@ -464,11 +716,12 @@ def setup_callbacks(config: Config):
         callbacks.append(
             ModelCheckpoint(
                 dirpath=os.path.join(log_config['log_dir'], log_config['experiment_name'], "checkpoints"),
-                filename="best-{epoch:02d}-{val/total_loss:.3f}",
+                filename="best-epoch={epoch:02d}-val_total_loss={val/total_loss:.3f}",
                 monitor="val/total_loss",
                 mode="min",
                 save_top_k=3,
                 save_last=True,
+                auto_insert_metric_name=False,  # Prevents automatic metric insertion
             )
         )
         print("Model checkpointing enabled")
@@ -518,9 +771,19 @@ def main():
     # Set random seed
     pl.seed_everything(config.training['seed'])
     
-    # Setup data module
-    print("Setting up data module...")
-    data_module = JUMPDataModule(config)
+    # Setup data module based on modality
+    modality = config.modality
+    print(f"Setting up data module for modality: {modality}")
+    
+    if modality == 'genomic':
+        data_module = GenomicDataModule(config)
+        print("Using GenomicDataModule for LINCS L1000 data")
+    elif modality == 'jump_cp':
+        data_module = JUMPDataModule(config)
+        print("Using JUMPDataModule for Cell Painting data")
+    else:
+        raise ValueError(f"Unknown modality: {modality}. Supported modalities: 'jump_cp', 'genomic'")
+    
     data_module.prepare_data()
     # Note: setup() will be called automatically by PyTorch Lightning during trainer.fit()
     
