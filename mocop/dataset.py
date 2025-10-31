@@ -1,5 +1,6 @@
 import sys 
-sys.path.insert(1, '/scratch/work/masooda1/Multi_Modal_Contrastive/mocop')
+sys.path.insert(1, '/scratch/project_462000766/Multi_Modal_Contrastive/mocop')
+from pathlib import Path
 
 from typing import Dict
 import numpy as np
@@ -8,13 +9,19 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, Subset
 from rdkit import Chem
+from rdkit.Chem.Scaffolds import MurckoScaffold
+from sklearn.model_selection import StratifiedGroupKFold
+
+from rdkit import RDLogger  
+RDLogger.DisableLog('rdApp.*')
 
 from featurizer.smiles_transformation import (inchi2smiles, smiles2fp,
                                               smiles2graph)
+import deepchem as dc
 
 class SupervisedGraphDataset(Dataset):
     def __init__(
-        self, data_path, cmpd_col="smiles", cmpd_col_is_inchikey=False, pad_length=0
+        self, data_path, cmpd_col="smiles", label_col=None, cmpd_col_is_inchikey=False, pad_length=0, invalid_smiles_report=None
     ):
         if "parquet" in data_path:
             self.df = pd.read_parquet(data_path)
@@ -24,9 +31,39 @@ class SupervisedGraphDataset(Dataset):
         self.df = self.df.set_index(cmpd_col)
         if cmpd_col_is_inchikey:
             self.df.index = [inchi2smiles(s) for s in self.df.index]
-        self.df = self.df[[c for c in self.df.columns if not c.startswith("Metadata")]]
+        if label_col is None:
+            self.df = self.df[[c for c in self.df.columns if not c.startswith("Metadata")]]
+        else:
+            # Keep only the specified label column(s)
+            if isinstance(label_col, str):
+                label_col = [label_col]  # Convert to list for consistent handling
+            self.df = self.df[label_col]
+            
+            #print(f"Dataset loaded with specific label columns: {label_col}")
+            #for col in label_col:
+                #print(f"{col} distribution:")
+                #print(self.df[col].value_counts().sort_index())
+        
+        # Optionally filter out invalid SMILES using a precomputed report
+        if invalid_smiles_report is not None:
+            report_path = Path(invalid_smiles_report)
+            if report_path.exists():
+                try:
+                    failed_df = pd.read_csv(report_path)
+                    failed_smiles = set(failed_df.get("smiles", []))
+                    if failed_smiles:
+                        before = len(self.df)
+                        self.df = self.df[~self.df.index.isin(failed_smiles)]
+                        removed = before - len(self.df)
+                        if removed:
+                            print(f"Filtered out {removed} invalid SMILES using {report_path.name}")
+                except Exception as e:
+                    print(f"Warning: failed to read invalid SMILES report at {report_path}: {e}")
+
         self.unique_smiles = self.df.index
         self.pad_length = pad_length
+        #print(f"Total compounds with valid SMILES: {len(self.unique_smiles)}")
+
 
     def __len__(self):
         return len(self.unique_smiles)
@@ -251,13 +288,14 @@ class CellLineTripleInputGraphDatasetJUMP(DualInputGraphDatasetJUMP):
     - Genomic data for multiple cell lines
     """
 
-    def __init__(self, data_path, genomic_data_path, pad_length, *args, **kwargs):
+    def __init__(self, data_path, genomic_data_path, pad_length, invalid_smiles_report = None, *args, **kwargs):
         """Initialize the dataset.
         
         Args:
             data_path (str): Path to morphological data file (CSV/Parquet)
             genomic_data_path (str): Path to genomic data file (Parquet)
             pad_length (int): Maximum length for padding molecular graphs
+            invalid_smiles_report (str): Path to invalid SMILES report file (CSV)
         """
         # Define column names for data identification
         self.smiles_col = "Metadata_SMILES"
@@ -287,6 +325,19 @@ class CellLineTripleInputGraphDatasetJUMP(DualInputGraphDatasetJUMP):
             list(genomic_smiles) +  # First: all SMILES with genomic data
             list(cell_smiles - genomic_smiles)  # Then: SMILES with only morphological data
         )
+
+        failed_report = Path(invalid_smiles_report)
+        if failed_report.exists():
+            failed_df = pd.read_csv(failed_report)
+            failed_smiles = set(failed_df.get('smiles', []))
+            if failed_smiles:
+                before = len(self.unique_smiles)
+                self.unique_smiles = [s for s in self.unique_smiles if s not in failed_smiles]
+                self.df = self.df[~self.df[self.smiles_col].isin(failed_smiles)].reset_index(drop=True)
+                self.genomic_df = self.genomic_df[~self.genomic_df[self.smiles_col].isin(failed_smiles)].reset_index(drop=True)
+                removed = before - len(self.unique_smiles)
+                if removed:
+                    print(f"Filtered out {removed} invalid SMILES using {failed_report.name}")
         
         # Print dataset composition statistics
         print("\nDataset Statistics:")
@@ -345,43 +396,53 @@ class CellLineTripleInputGraphDatasetJUMP(DualInputGraphDatasetJUMP):
         morph_feat = (self.df[morph_mask].sample(1, random_state=rng)[self.morph_cols].values.astype(float).flatten() 
                      if morph_mask.any() else -1 * np.ones(len(self.morph_cols)))
         
-        # Initialize tensors for all cell lines
-        n_cell_lines = len(self.cell_line_to_idx)
-        n_features = len(self.genomic_cols)
+        # Get only valid genomic conditions for this SMILES
+        valid_genomic_data = []
+        valid_cell_indices = []
+        valid_doses = []
+        valid_times = []
         
-        # Initialize with padding values (0)
-        cell_features = -1 * np.ones((n_cell_lines, n_features))
-        cell_indices = np.zeros(n_cell_lines)  # 0 indicates missing/padding
-        doses = np.zeros(n_cell_lines)  # 0 indicates padding
-        times = np.zeros(n_cell_lines)  # 0 indicates padding
-        
-        # Fill in available data
         smiles_mask = self.genomic_df[self.smiles_col] == smiles
         if smiles_mask.any():
-            for cell_line in self.genomic_df[smiles_mask][self.cell_line_col].unique():
+            # Convert to list for pickling compatibility with multiprocessing
+            for cell_line in list(self.genomic_df[smiles_mask][self.cell_line_col].unique()):
                 cell_idx = self.cell_line_to_idx[cell_line]
-                array_idx = cell_idx - 1
                 mask = smiles_mask & (self.genomic_df[self.cell_line_col] == cell_line)
                 if mask.any():
                     # Pass the dedicated generator to the sampling method here as well
                     sampled_row = self.genomic_df[mask].sample(1, random_state=rng)
-                    cell_features[array_idx] = sampled_row[self.genomic_cols].values
-                    cell_indices[array_idx] = cell_idx
+                    
+                    # Only include valid data
+                    valid_genomic_data.append(sampled_row[self.genomic_cols].values.flatten())
+                    valid_cell_indices.append(cell_idx)
                     
                     # Convert actual values to indices
                     dose_value = sampled_row['Metadata_Dose_Level'].values[0]
                     time_value = sampled_row['Metadata_pert_time'].values[0]
-                    doses[array_idx] = self.dose_to_idx[dose_value]  # e.g., 2 -> 1, 5 -> 2, etc.
-                    times[array_idx] = self.time_to_idx[time_value]  # e.g., 6 -> 1, 24 -> 2
+                    valid_doses.append(self.dose_to_idx[dose_value])
+                    valid_times.append(self.time_to_idx[time_value])
+        
+        # Convert to tensors (empty if no valid data)
+        if valid_genomic_data:
+            genomic_features = torch.FloatTensor(np.array(valid_genomic_data))  # [n_valid_conditions, n_features]
+            cell_indices = torch.LongTensor(valid_cell_indices)  # [n_valid_conditions]
+            doses = torch.FloatTensor(valid_doses)  # [n_valid_conditions]
+            times = torch.FloatTensor(valid_times)  # [n_valid_conditions]
+        else:
+            # No valid genomic data - return empty tensors
+            genomic_features = torch.empty(0, len(self.genomic_cols))
+            cell_indices = torch.empty(0, dtype=torch.long)
+            doses = torch.empty(0)
+            times = torch.empty(0)
         
         return {
             "inputs": {
                 "x_a": [torch.FloatTensor(f) for f in cmpd_feat],
                 "x_b": torch.FloatTensor(morph_feat),
-                "x_c": torch.FloatTensor(cell_features),  # [n_cell_lines, n_features]
-                "cell_indices": torch.LongTensor(cell_indices),  # [n_cell_lines], 0 = padding
-                "doses": torch.FloatTensor(doses),  # Add doses for each cell line
-                "times": torch.FloatTensor(times)   # Add times for each cell line
+                "x_c": genomic_features,  # [n_valid_conditions, n_features] - variable length
+                "cell_indices": cell_indices,  # [n_valid_conditions] - variable length
+                "doses": doses,  # [n_valid_conditions] - variable length
+                "times": times   # [n_valid_conditions] - variable length
             },
             "labels": torch.Tensor([-1])
         }
@@ -389,16 +450,16 @@ class CellLineTripleInputGraphDatasetJUMP(DualInputGraphDatasetJUMP):
     def collate_fn(self, batch):
         """Collate function for DataLoader.
         
-        Handles batching of variable-length cell line data by:
-        1. Padding to maximum number of possible cell lines
-        2. Using 0 to indicate padding/missing data
+        Handles batching of variable-length genomic data by:
+        1. Concatenating all valid genomic conditions across the batch
+        2. Creating batch indices to track which conditions belong to which sample
         
         Args:
             batch (list): List of items from __getitem__
             
         Returns:
             dict: Contains:
-                - inputs: Dict with batched x_a, x_b, x_c features, cell_indices, doses, and times
+                - inputs: Dict with batched x_a, x_b, genomic data, and batch indices
                 - labels: Batched labels
         """
         # Stack molecular features
@@ -411,38 +472,202 @@ class CellLineTripleInputGraphDatasetJUMP(DualInputGraphDatasetJUMP):
         x_b_batch = torch.stack([item["inputs"]["x_b"] for item in batch])
         labels_batch = torch.stack([item["labels"] for item in batch])
         
-        # Stack genomic features and cell indices
-        x_c_batch = torch.stack([item["inputs"]["x_c"] for item in batch])
-        cell_indices_batch = torch.stack([item["inputs"]["cell_indices"] for item in batch])
+        # Handle variable-length genomic data
+        all_genomic_features = []
+        all_cell_indices = []
+        all_doses = []
+        all_times = []
+        batch_indices = []  # Track which sample each condition belongs to
         
-        # Stack doses and times
-        doses_batch = torch.stack([item["inputs"]["doses"] for item in batch])
-        times_batch = torch.stack([item["inputs"]["times"] for item in batch])
+        for batch_idx, item in enumerate(batch):
+            genomic_features = item["inputs"]["x_c"]
+            if len(genomic_features) > 0:  # If this sample has valid genomic data
+                all_genomic_features.append(genomic_features)
+                all_cell_indices.append(item["inputs"]["cell_indices"])
+                all_doses.append(item["inputs"]["doses"])
+                all_times.append(item["inputs"]["times"])
+                
+                # Create batch indices for this sample's conditions
+                n_conditions = len(genomic_features)
+                batch_indices.extend([batch_idx] * n_conditions)
+        
+        # Concatenate all genomic data if any exists
+        if all_genomic_features:
+            x_c_batch = torch.cat(all_genomic_features, dim=0)  # [total_conditions, n_features]
+            cell_indices_batch = torch.cat(all_cell_indices, dim=0)  # [total_conditions]
+            doses_batch = torch.cat(all_doses, dim=0)  # [total_conditions]
+            times_batch = torch.cat(all_times, dim=0)  # [total_conditions]
+            batch_indices = torch.LongTensor(batch_indices)  # [total_conditions]
+        else:
+            # No genomic data in this batch
+            x_c_batch = torch.empty(0, len(self.genomic_cols))
+            cell_indices_batch = torch.empty(0, dtype=torch.long)
+            doses_batch = torch.empty(0)
+            times_batch = torch.empty(0)
+            batch_indices = torch.empty(0, dtype=torch.long)
         
         return {
             "inputs": {
                 "x_a": x_a_batch,
                 "x_b": x_b_batch,
-                "x_c": x_c_batch,
-                "cell_indices": cell_indices_batch,
-                "doses": doses_batch,  # Add batched doses
-                "times": times_batch   # Add batched times
+                "x_c": x_c_batch,  # [total_conditions, n_features]
+                "cell_indices": cell_indices_batch,  # [total_conditions]
+                "doses": doses_batch,  # [total_conditions]
+                "times": times_batch,  # [total_conditions]
+                "batch_indices": batch_indices  # [total_conditions] - which sample each condition belongs to
             },
             "labels": labels_batch
         }
 
-def _split_data(dataset: Dataset, splits: Dict[str, str]) -> Dict[str, Dataset]:
+def _deepchem_split(dataset, train_size=0.8, val_size=0.2, test_size=0.0, 
+                   split_method="butina", butina_threshold=0.7, seed=42, **kwargs):
+    """
+    Perform train/val/test split using DeepChem splitters.
+    Similar to the user's example but returns integer indices for PyTorch compatibility.
+    """
+    print(f"Using DeepChem {split_method} splitter")
+    
+    # Get SMILES and activities from dataset
+    smiles = dataset.unique_smiles
+    activities = dataset.df.values
+    
+    # Create DeepChem dataset (similar to user's example)
+    dc_dataset = dc.data.NumpyDataset(X=activities, ids=smiles)
+    
+    # Initialize the appropriate splitter
+    if split_method == "butina":
+        splitter = dc.splits.ButinaSplitter(cutoff=butina_threshold)
+        print(f"Using Butina splitter with cutoff={butina_threshold}")
+    elif split_method == "scaffold":
+        splitter = dc.splits.ScaffoldSplitter()
+        print("Using Scaffold splitter")
+    else:
+        raise ValueError(f"Unknown DeepChem split_method: {split_method}. Choose 'butina' or 'scaffold'")
+    
+    # Validate split ratios
+    total_ratio = train_size + val_size + test_size
+    if abs(total_ratio - 1.0) > 1e-6:
+        print(f"Warning: Split ratios don't sum to 1.0 (sum={total_ratio:.3f}). Normalizing...")
+        train_size = train_size / total_ratio
+        val_size = val_size / total_ratio
+        test_size = test_size / total_ratio
+    
+    # Perform the split (similar to user's example)
+    if test_size > 0:
+        train_ds, val_ds, test_ds = splitter.train_valid_test_split(
+            dc_dataset, frac_train=train_size, frac_valid=val_size, frac_test=test_size, seed=seed)
+        test_smiles = set(test_ds.ids) if len(test_ds) > 0 else set()
+    else:
+        train_ds, val_ds = splitter.train_test_split(
+            dc_dataset, frac_train=train_size, seed=seed)
+        test_smiles = set()
+    
+    # Get SMILES for each split (similar to user's example: ncv_smiles, heldouttest_smiles)
+    train_smiles = set(train_ds.ids) if len(train_ds) > 0 else set()
+    val_smiles = set(val_ds.ids) if len(val_ds) > 0 else set()
+    
+    # Convert to integer indices for PyTorch Dataset compatibility
+    train_idx = [i for i, smile in enumerate(smiles) if smile in train_smiles]
+    val_idx = [i for i, smile in enumerate(smiles) if smile in val_smiles]
+    test_idx = [i for i, smile in enumerate(smiles) if smile in test_smiles]
+    
+    total_samples = len(train_idx) + len(val_idx) + len(test_idx)
+    print(f"DeepChem {split_method} split:")
+    print(f"  Train: {len(train_idx)} samples ({len(train_idx)/total_samples:.3f})")
+    print(f"  Val:   {len(val_idx)} samples ({len(val_idx)/total_samples:.3f})")
+    if test_idx:
+        print(f"  Test:  {len(test_idx)} samples ({len(test_idx)/total_samples:.3f})")
+    
+    return train_idx, val_idx, test_idx
+
+def _split_data(dataset: Dataset, splits: Dict[str, str], train_size=0.8, val_size=0.2, test_size=0.0,
+                split_method="random", butina_threshold=0.7, seed=42, **kwargs) -> Dict[str, Dataset]:
     if splits is None:
         unique_smiles = dataset.unique_smiles
         total_smiles = len(unique_smiles)
-        train_idx = np.random.choice(
-            total_smiles, size=int(0.9 * total_smiles), replace=False
-        )
-        val_idx = [i for i in range(total_smiles) if i not in train_idx]
+        
+        print(f"Using {split_method} split method")
+        
+        if split_method == "random":
+            # Validate split ratios for random split
+            total_ratio = train_size + val_size + test_size
+            if abs(total_ratio - 1.0) > 1e-6:
+                print(f"Warning: Split ratios don't sum to 1.0 (sum={total_ratio:.3f}). Normalizing...")
+                train_size = train_size / total_ratio
+                val_size = val_size / total_ratio
+                test_size = test_size / total_ratio
+            
+            # Set random seed for reproducibility
+            np.random.seed(seed)
+            indices = np.random.permutation(total_smiles)
+            
+            train_end = int(train_size * total_smiles)
+            val_end = train_end + int(val_size * total_smiles)
+            
+            train_idx = indices[:train_end].tolist()
+            val_idx = indices[train_end:val_end].tolist()
+            test_idx = indices[val_end:].tolist()
+            
+            print(f"Random split:")
+            print(f"  Train: {len(train_idx)} samples ({len(train_idx)/total_smiles:.3f})")
+            print(f"  Val:   {len(val_idx)} samples ({len(val_idx)/total_smiles:.3f})")
+            print(f"  Test:  {len(test_idx)} samples ({len(test_idx)/total_smiles:.3f})")
+            
+        elif split_method in ["butina", "scaffold"]:
+            # Use DeepChem splitters
+            train_idx, val_idx, test_idx = _deepchem_split(
+                dataset=dataset,
+                train_size=train_size,
+                val_size=val_size,
+                test_size=test_size,
+                split_method=split_method,
+                butina_threshold=butina_threshold,
+                seed=seed,
+                **kwargs
+            )
+        elif split_method == "murcko_sgkf":
+            # Murcko scaffold groups + StratifiedGroupKFold (5 folds -> 3/1/1)
+            smiles_list = list(unique_smiles)
+            # Labels: assume binary stored in dataset.df first column
+            label_col = dataset.df.columns[0]
+            y = np.array([dataset.df.loc[s][label_col] for s in smiles_list])
+            # Create scaffold groups
+            def _scaffold(sm):
+                m = Chem.MolFromSmiles(sm)
+                return Chem.MolToSmiles(MurckoScaffold.GetScaffoldForMol(m))
+                
+            groups = np.array([_scaffold(sm) for sm in smiles_list])
+            # 5-fold split with stratification by y and grouping by scaffold
+            sgkf = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=seed)
+            folds = list(sgkf.split(X=np.zeros(len(y)), y=y, groups=groups))
+            # Assign first 3 folds to train, 4th to val, 5th to test
+            train_indices = np.concatenate([folds[i][1] for i in [0,1,2]])
+            val_indices = folds[3][1]
+            test_indices = folds[4][1]
+            train_idx = train_indices.tolist()
+            val_idx = val_indices.tolist()
+            test_idx = test_indices.tolist()
+            # Scaffold statistics
+            total_scaffolds = len(set(groups))
+            train_scaffolds = len(set(groups[train_indices]))
+            val_scaffolds = len(set(groups[val_indices]))
+            test_scaffolds = len(set(groups[test_indices]))
+            print("Murcko+SGKF split (5 folds -> 3/1/1):")
+            print(f"  Train: {len(train_idx)} samples ({len(train_idx)/total_smiles:.3f})")
+            print(f"  Val:   {len(val_idx)} samples ({len(val_idx)/total_smiles:.3f})")
+            print(f"  Test:  {len(test_idx)} samples ({len(test_idx)/total_smiles:.3f})")
+            print("Scaffold counts:")
+            print(f"  Total unique scaffolds: {total_scaffolds}")
+            print(f"  Train scaffolds: {train_scaffolds}")
+            print(f"  Val scaffolds:   {val_scaffolds}")
+            print(f"  Test scaffolds:  {test_scaffolds}")
+        else:
+            raise ValueError(f"Unknown split_method: {split_method}. Choose 'random', 'butina', or 'scaffold'")
+        
         return {
             "train": Subset(dataset, train_idx),
             "val": Subset(dataset, val_idx),
-            "test": Subset(dataset, val_idx),
+            "test": Subset(dataset, test_idx),
         }
 
     assert "train" in splits and "val" in splits

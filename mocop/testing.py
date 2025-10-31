@@ -21,16 +21,27 @@ def test(cfg: Union[Dict, DictConfig]) -> nn.Module:
     model = hydra.utils.instantiate(cfg.test_model)
 
     dataloaders = hydra.utils.call(cfg.dataloaders)
-    mock_inputs = iter(dataloaders["train"]).next()
-    _ = model(**mock_inputs["inputs"])
-    if "test_model_ckpt" in cfg:
-        ckpt = torch.load(cfg.test_model_ckpt)
-        model.load_state_dict(ckpt["state_dict"])
+    #mock_inputs = next(iter(dataloaders["train"]))
+    #_ = model(**mock_inputs["inputs"])
+    # Manual checkpoint loading (simple, explicit)
+    ckpt = torch.load(cfg.test_model_ckpt)
+    model.load_state_dict(ckpt["state_dict"])
+    print(f"Loaded checkpoint for testing: {cfg.test_model_ckpt}")
 
     trainer = hydra.utils.instantiate(cfg.trainer)
-    test_metrics = trainer.validate(
-        model=model, dataloaders=dataloaders["test"], verbose=True
-    )
+    
+    # Check if test set exists and has samples
+    test_dataloader = dataloaders.get("test")
+    if test_dataloader is None or len(test_dataloader.dataset) == 0:
+        print("Warning: Test set is empty or doesn't exist. Using validation set for testing.")
+        test_metrics = trainer.validate(
+            model=model, dataloaders=dataloaders["val"], verbose=True
+        )
+    else:
+        print(f"Using test set with {len(test_dataloader.dataset)} samples for testing.")
+        test_metrics = trainer.validate(
+            model=model, dataloaders=dataloaders["test"], verbose=True
+        )
     
     # Use the specified test results directory and filename
     test_dir = cfg.test_results_dir

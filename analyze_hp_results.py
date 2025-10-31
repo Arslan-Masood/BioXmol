@@ -98,7 +98,7 @@ def load_results(log_dir: str):
     return results
 
 
-def plot_line_charts(results, metric='final_train_total_loss'):
+def plot_line_charts(results, metric='final_train_total_loss', log_dir='vae_logs'):
     """Create line plots: LR vs loss, grouped by norm type, subplots by architecture."""
     
     if not HAS_MATPLOTLIB:
@@ -127,7 +127,7 @@ def plot_line_charts(results, metric='final_train_total_loss'):
             print(f"  {arch} + {norm}: {len(set(available_lrs))} learning rates {sorted(set(available_lrs))}")
     
     # Create subplots
-    fig, axes = plt.subplots(1, len(architectures), figsize=(5*len(architectures), 4))
+    fig, axes = plt.subplots(1, len(architectures), figsize=(5*len(architectures), 4), sharey=True)
     if len(architectures) == 1:
         axes = [axes]
     
@@ -172,10 +172,10 @@ def plot_line_charts(results, metric='final_train_total_loss'):
             ax.legend(title='Normalization', bbox_to_anchor=(1.05, 1), loc='upper left')
     
     plt.tight_layout()
-    plt.savefig(f'hp_analysis_{metric}.png', dpi=300, bbox_inches='tight')
+    plt.savefig(f'{log_dir}/hp_analysis_{metric}.png', dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"Plot saved: hp_analysis_{metric}.png")
+    print(f"Plot saved: {log_dir}/hp_analysis_{metric}.png")
 
 
 def find_best(results, metric='final_train_total_loss'):
@@ -223,7 +223,7 @@ def main():
     find_best(results, args.metric)
     
     if HAS_MATPLOTLIB:
-        plot_line_charts(results, args.metric)
+        plot_line_charts(results, args.metric, args.log_dir)
     else:
         print("\nInstall matplotlib for plots")
 

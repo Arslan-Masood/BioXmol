@@ -2,7 +2,6 @@ import functools
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem, inchi
-from openeye import oechem, oegraphsim
 
 from featurizer.molgraph_rdkit import MolGraph
 
@@ -29,12 +28,20 @@ def smiles2fp(
     return np.array(fp)
 
 
-@functools.lru_cache(maxsize=None)
 def smiles2graph(smiles, adj_type="norm_id_adj_mat", explicit_H_node=None, **kwargs):
-    mol = MolGraph(smiles, explicit_H_node)
-    adj_mat = getattr(mol, adj_type)
-    node_feat = mol.node_feat
-    return adj_mat, node_feat
+    """
+    Convert SMILES to graph representation.
+    
+    Note: lru_cache was removed to enable multiprocessing in DataLoader.
+    The cache caused pickling errors when num_workers > 0.
+    """
+    try:
+        mol = MolGraph(smiles, explicit_H_node)
+        adj_mat = getattr(mol, adj_type)
+        node_feat = mol.node_feat
+        return adj_mat, node_feat
+    except Exception as exc:
+        return None
 
 
 @functools.lru_cache(maxsize=None)

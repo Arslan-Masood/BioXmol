@@ -18,18 +18,55 @@ import pytorch_lightning as pl
 import matplotlib.pyplot as plt
 import seaborn as sns
 from neptune.types import File
-from pytorch_lightning.utilities.seed import seed_everything
-
+from pytorch_lightning import seed_everything
 
 
 def build_dataloaders(
     dataset: Dataset,
     batch_size: int,
     splits: Dict[str, str] = None,
+    train_size: float = 0.8,
+    val_size: float = 0.1,
+    test_size: float = 0.1,
+    split_method: str = "random", # random, butina, scaffold
+    butina_threshold: float = 0.7,
+    seed: int = 42,
     **kwargs,
 ) -> Dict[str, DataLoader]:
-    split_dataset = _split_data(dataset, splits=splits)
+
+    split_dataset = _split_data(dataset, 
+                            splits=splits, 
+                            train_size=train_size,
+                            val_size=val_size,
+                            test_size=test_size,
+                            split_method=split_method,
+                            butina_threshold=butina_threshold,
+                            seed=seed,
+                            **kwargs)
     dataloaders = {}
+    
+    # Print class distribution per split if labels are available
+    try:
+        label_column = dataset.df.columns[0] if hasattr(dataset, 'df') else None
+        if label_column is not None:
+            print("\nLabel distribution per split ({}):".format(label_column))
+            print("-" * 50)
+            for split_name, ds in split_dataset.items():
+                parent = getattr(ds, 'dataset', None)
+                indices = getattr(ds, 'indices', None)
+                if parent is None or indices is None or not hasattr(parent, 'unique_smiles'):
+                    continue
+                smiles_for_split = [parent.unique_smiles[i] for i in indices]
+                labels = parent.df.loc[smiles_for_split][label_column]
+                total = len(labels)
+                pos = int((labels == 1).sum())
+                neg = int((labels == 0).sum())
+                pos_pct = (pos / total) if total else 0.0
+                neg_pct = (neg / total) if total else 0.0
+                print(f"{split_name.upper()}: total={total} | pos={pos} ({pos_pct:.3f}) | neg={neg} ({neg_pct:.3f})")
+            print("-" * 50)
+    except Exception:
+        pass
     
     # Get collate_fn from dataset if it exists
     collate_fn = getattr(dataset, 'collate_fn', None)
@@ -75,11 +112,11 @@ def train(cfg: Union[Dict, DictConfig]) -> nn.Module:
         model.set_scheduler(scheduler, OmegaConf.to_container(cfg.scheduler_config))
 
     dataloaders = hydra.utils.call(cfg.dataloaders)
-    mock_inputs = iter(dataloaders["train"]).next()
+    mock_inputs = next(iter(dataloaders["train"]))
     _ = model(**mock_inputs["inputs"])
 
     trainer = hydra.utils.instantiate(cfg.trainer)
-    trainer.logger.experiment["model/hyper-parameters"] = (OmegaConf.to_container(cfg))
+    #trainer.logger.experiment["model/hyper-parameters"] = (OmegaConf.to_container(cfg))
     print("Hyperparameters logged to Neptune.")
     trainer.fit(model, dataloaders["train"], dataloaders["val"])
 
@@ -131,7 +168,9 @@ class TrainingMonitor(pl.Callback):
         # 2. Perform a forward pass to get the logits
         pl_module.eval() # Set model to evaluation mode
         with torch.no_grad():
-            logits_ab, _, _ = pl_module.forward(**sample_batch["inputs"])
+            logits_ab, logits_ac = pl_module.forward(**sample_batch["inputs"])
+            if logits_ab is None:
+                return  # No morphological data to visualize
             temperature = pl_module.temperature
             scaled_logits_ab = logits_ab * temperature
         pl_module.train() # Set model back to training mode
@@ -157,7 +196,7 @@ class TrainingMonitor(pl.Callback):
 
     def on_validation_epoch_end(self, trainer, pl_module):
         """
-        Called at the end of the training epoch.
+        Called at the end of the validation epoch.
         Generates and logs plots.
         """
         # Ensure the logger is available
@@ -172,7 +211,9 @@ class TrainingMonitor(pl.Callback):
         # 2. Perform a forward pass to get the logits
         pl_module.eval() # Set model to evaluation mode
         with torch.no_grad():
-            logits_ab, _, _ = pl_module.forward(**sample_batch["inputs"])
+            logits_ab, logits_ac = pl_module.forward(**sample_batch["inputs"])
+            if logits_ab is None:
+                return  # No morphological data to visualize
             temperature = pl_module.temperature
             scaled_logits_ab = logits_ab * temperature
         pl_module.train() # Set model back to training mode

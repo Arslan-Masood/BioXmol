@@ -1,0 +1,19 @@
+{
+  "val/supervised_loss": 0.6587797403335571,
+  "val/ECE_mean": 0.08735190331935883,
+  "val/balanced_accuracy_mean": 0.5952297449111938,
+  "val/precision_mean": 0.7162162065505981,
+  "val/loss": 0.6587797403335571,
+  "val/mcc_mean": 0.18496596813201904,
+  "val/auprc_mean": 0.695155143737793,
+  "val/specificity_mean": 0.6440678238868713,
+  "val/f1_mean": 0.6198830604553223,
+  "val/sensitivity_mean": 0.5463917255401611,
+  "val/average_precision_mean": 0.695155143737793,
+  "val/recall_mean": 0.5463917255401611,
+  "val/ppv_mean": 0.7162162065505981,
+  "val/auroc_mean": 0.5991612672805786,
+  "val/pos_lr_mean": 1.5351005792617798,
+  "val/optimal_threshold_mean": 0.5737724900245667,
+  "best_epoch": 5
+}

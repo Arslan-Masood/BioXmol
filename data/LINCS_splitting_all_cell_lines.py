@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import os
 import logging
+import argparse
 from typing import List, Tuple, Dict
 import random
 from rdkit import Chem
@@ -196,13 +197,30 @@ def process_splits(genomic_data_path: str, jump_data_path: str, output_dir: str,
     save_splits(splits, output_dir, seed)
 
 def main():
-    # Define paths
-    genomic_data_path = "/scratch/cs/pml/AI_drug/molecular_representation_learning/LINCS/landmark_cmp_data_min1000compounds_all_measurements.parquet"
-    jump_data_path = "/scratch/work/masooda1/Multi_Modal_Contrastive/data/jump_data"
-    output_dir = "/scratch/work/masooda1/Multi_Modal_Contrastive/data/LINCS_All_cell_lines"
+    parser = argparse.ArgumentParser(description="Create LINCS data splits for training")
+    
+    parser.add_argument("--genomic_data_path", type=str, required=True,
+                       help="Path to processed LINCS genomic data (parquet file)")
+    parser.add_argument("--jump_data_path", type=str, required=True,
+                       help="Path to directory containing JUMP data splits")
+    parser.add_argument("--output_dir", type=str, required=True,
+                       help="Directory to save LINCS and combined splits")
+    parser.add_argument("--seeds", type=int, nargs='+', default=[0, 1, 2],
+                       help="Random seeds for splits (default: 0 1 2)")
+    
+    args = parser.parse_args()
+    
+    logger.info(f"Creating LINCS splits with the following parameters:")
+    logger.info(f"  Genomic data path: {args.genomic_data_path}")
+    logger.info(f"  JUMP data path: {args.jump_data_path}")
+    logger.info(f"  Output directory: {args.output_dir}")
+    logger.info(f"  Seeds: {args.seeds}")
+    
     # Process each split
-    for seed in [0, 1, 2]:
-        process_splits(genomic_data_path, jump_data_path, output_dir, seed)
+    for seed in args.seeds:
+        process_splits(args.genomic_data_path, args.jump_data_path, args.output_dir, seed)
+        
+    logger.info(f"\nCompleted all splits. Results saved to: {args.output_dir}")
 
 if __name__ == "__main__":
     main()

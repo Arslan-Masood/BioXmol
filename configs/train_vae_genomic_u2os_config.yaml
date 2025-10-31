@@ -1,0 +1,64 @@
+# VAE Training Configuration for Genomic (LINCS L1000) Data - U2OS Cell Line Only
+# This config file contains all parameters for training VAE models on U2OS genomic data
+
+# Data parameters
+data:
+  modality: "genomic"  # Specify genomic modality
+  genomic_data_path: "/scratch/work/masooda1/datasets/LINCS_preprocessed/landmark_cmp_data_min1000compounds_all_measurements.parquet"
+  data_path: "/scratch/work/masooda1/datasets/LINCS_preprocessed/landmark_cmp_data_min1000compounds_all_measurements.parquet"  # Fallback path
+  train_split: null  # Path to train split CSV file (optional)
+  val_split: null    # Path to validation split CSV file (optional) 
+  test_split: null   # Path to test split CSV file (optional)
+  batch_size: 512   # Can use larger batch size with single cell line
+  num_workers: 8
+  normalize: true    # Whether to normalize features
+  target_cell_line: "U2OS"  # Filter to U2OS cell line only
+
+# Exclude control molecules (InChIKeys) - same as Cell Painting
+  exclude_molecules: 
+    - "IBCXZJCWDGCXQT-UHFFFAOYSA-N"  # 1593 duplicates
+    - "IHLVSLOZUHKNMQ-UHFFFAOYSA-N"  # 5881 duplicates
+    - "SRVFFFJZQVENJC-UHFFFAOYSA-N"  # 7059 duplicates
+    - "CQKBSRPVZZLCJE-UHFFFAOYSA-N"  # 7443 duplicates
+    - "KPBNHDGDUADAGP-UHFFFAOYSA-N"  # 7454 duplicates
+    - "GJFCONYVAUNLKB-UHFFFAOYSA-N"  # 7459 duplicates
+    - "LOUPRKONTZGTKE-UHFFFAOYSA-N"  # 7459 duplicates
+    - "OINGHOPGNMYCAB-UHFFFAOYSA-N"  # 7461 duplicates
+    - "IVUGFMLRJOCGAS-UHFFFAOYSA-N"  # 7469 duplicates
+    - "IAZDPXIOMUYVGZ-UHFFFAOYSA-N"  # 79094 duplicates
+    
+# Model parameters  
+model:
+  model_type: "vae"        # "vae" or "ae"
+  architecture: "vanilla"  # "vanilla", "medium", or "large" - single cell line can use smaller model
+  latent_dim: 128          # Standard latent dimension
+  dropout: 0.15            # Moderate dropout for single cell line
+  norm_type: "batchnorm"   # "batchnorm", "layernorm", or "none"
+  beta: 1.0                # KL divergence weight (beta-VAE)
+  scheduler_type: "cosine_annealing"  # Learning rate scheduler
+  T_max: 100               # Max epochs for cosine annealing
+  eta_min: 0.00001         # Min learning rate for cosine annealing
+  warmup_epochs: 10        # Number of warmup epochs
+
+# Optimization parameters
+optimization:
+  learning_rate: 0.001     # Standard learning rate for single cell line
+  weight_decay: 0.0001     # 1e-4 as decimal
+
+# Training parameters
+training:
+  max_epochs: 100          # Standard epochs for single cell line
+  patience: 15             # Standard patience
+  gpus: 1
+  precision: 32
+  seed: 42
+  fast_dev_run: false      # Set to true for debugging
+  save_model_weights: false  # Set to true to save model checkpoints
+
+# Logging parameters
+logging:
+  experiment_name: "genomic_u2os_vae_vanilla"  # Will be used as-is
+  project_name: "genomic-lincs-l1000"
+  entity: null             # Your wandb entity/username
+  log_dir: "/scratch/work/masooda1/Multi_Modal_Contrastive/vae_logs"
+  use_wandb: false  # Set to true to enable wandb logging 

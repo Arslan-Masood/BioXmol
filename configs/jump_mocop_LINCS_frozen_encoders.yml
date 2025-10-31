@@ -1,0 +1,103 @@
+seed: 0
+dataloaders:
+  _target_: training.build_dataloaders
+  dataset:
+    _target_: dataset.CellLineTripleInputGraphDatasetJUMP
+    data_path: /scratch/work/masooda1/Multi_Modal_Contrastive/data/jump_data/cell_fetures_with_smiles.parquet
+    genomic_data_path: /scratch/cs/pml/AI_drug/molecular_representation_learning/LINCS/landmark_cmp_data_min1000compounds_all_measurements.parquet
+    pad_length: 250
+  splits:
+    train: /scratch/work/masooda1/Multi_Modal_Contrastive/data/LINCS_All_cell_lines/JUMP-LINCS-compound-split-0-train.csv
+    val: /scratch/work/masooda1/Multi_Modal_Contrastive/data/LINCS_All_cell_lines/JUMP-LINCS-compound-split-0-val.csv
+    test: /scratch/work/masooda1/Multi_Modal_Contrastive/data/LINCS_All_cell_lines/JUMP-LINCS-compound-split-0-test.csv
+  batch_size: 1024
+  num_workers: 24
+  pin_memory: true
+
+model:
+  _target_: model.CellLineTripleInputEncoder
+  encoder_a:
+    _target_: model.GatedGraphNeuralNetwork
+    n_edge: 1
+    in_dim: 75
+    n_conv: 6
+    fc_dims:
+    - 1024
+    - 128  # Final layer to match pretrained encoder dimensions
+    p_dropout: 0.1
+  encoder_b:
+    _target_: model.MultiLayerPerceptron
+    num_input_features: 3479  # morphological features (not used if pretrained)
+    hidden_layer_dimensions:
+    - 512
+    - 256
+    - 128
+    p_dropout: 0.1
+  encoder_c:
+    _target_: model.MultiLayerPerceptron
+    num_input_features: 978   # genomic features (not used if pretrained)
+    hidden_layer_dimensions:
+    - 256
+    - 128
+    p_dropout: 0.1
+  
+  # ============= PRETRAINED ENCODER CONFIGURATION =============
+  # Frozen encoders for feature extraction only
+  pretrained_encoder_b_path: "/scratch/work/masooda1/Multi_Modal_Contrastive/vae_logs_jump_cp/jump_ae_best/checkpoints/best-epoch=2094-val_total_loss=0.103.ckpt"  # Path to JUMP CP autoencoder
+  pretrained_encoder_c_path: "/scratch/work/masooda1/Multi_Modal_Contrastive/vae_logs_lincs/genomic_ae_best/checkpoints/best-epoch=7907-val_total_loss=0.501.ckpt"  # Path to genomic autoencoder
+  
+  # Freezing options - freeze both for feature extraction
+  freeze_encoder_b: true      # Freeze morphological encoder (feature extraction only)
+  freeze_encoder_c: true      # Freeze genomic encoder (feature extraction only)
+  
+  # Note: latent layer usage is always enabled by default (128-dim representations)
+  # =============================================================
+
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 0.001
+scheduler:
+  _target_: cosine_annealing_warmup.scheduler.CosineAnnealingWarmupRestarts
+  first_cycle_steps: 1000
+  cycle_mult: 1
+  max_lr: 0.01
+  min_lr: 1.0e-08
+  warmup_steps: 50
+scheduler_config:
+  monitor: val/loss
+trainer:
+  _target_: pytorch_lightning.Trainer
+  gpus: 1
+  num_nodes: 1
+  precision: 32
+  max_epochs: 1000
+  min_epochs: 50
+  fast_dev_run: false
+  check_val_every_n_epoch: 2
+  callbacks:
+  - _target_: pytorch_lightning.callbacks.early_stopping.EarlyStopping
+    monitor: val/morph_acc
+    mode: max
+    patience: 500
+  - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+    monitor: val/morph_acc
+    mode: max
+    save_top_k: 2
+    dirpath:
+  logger:
+    _target_: pytorch_lightning.loggers.WandbLogger
+    project:
+    save_dir: 
+    name: 
+    id: 
+    mode:
+test_model:
+  _target_: model.CellLineTripleInputEncoder
+  encoder_a: ${model.encoder_a}
+  encoder_b: ${model.encoder_b}
+  encoder_c: ${model.encoder_c}
+  pretrained_encoder_b_path: ${model.pretrained_encoder_b_path}
+  pretrained_encoder_c_path: ${model.pretrained_encoder_c_path}
+  freeze_encoder_b: ${model.freeze_encoder_b}
+  freeze_encoder_c: ${model.freeze_encoder_c}
+test_model_ckpt:

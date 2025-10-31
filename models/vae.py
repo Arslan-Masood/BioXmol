@@ -20,16 +20,24 @@ class VAEEncoder(nn.Module):
         dropout: float = 0.1,
         norm_type: Optional[str] = "batchnorm",  # "batchnorm", "layernorm", None
         model_type: str = "vae",  # "vae" or "ae"
+        # Conditional parameters for genomic data
+        conditional_mode: bool = False,
+        conditional_dim: int = 0,  # cell + dose + time embedding dimensions
     ):
         super().__init__()
         
         self.input_dim = input_dim
         self.latent_dim = latent_dim
         self.model_type = model_type
+        self.conditional_mode = conditional_mode
+        self.conditional_dim = conditional_dim
+        
+        # Adjust input dimension if using conditional mode
+        actual_input_dim = input_dim + conditional_dim if conditional_mode else input_dim
         
         # Build encoder layers
         layers = []
-        prev_dim = input_dim
+        prev_dim = actual_input_dim
         
         for i, hidden_dim in enumerate(hidden_dims):
             # Linear layer
@@ -60,8 +68,14 @@ class VAEEncoder(nn.Module):
             # Single deterministic latent layer for AE
             self.fc_latent = nn.Linear(prev_dim, latent_dim)
     
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor, conditional_features: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
         """Forward pass returning mean and log variance (VAE) or latent and zeros (AE)."""
+        # Concatenate conditional features if in conditional mode
+        if self.conditional_mode and conditional_features is not None:
+            x = torch.cat([x, conditional_features], dim=-1)
+        elif self.conditional_mode and conditional_features is None:
+            raise ValueError("Conditional features required when conditional_mode=True")
+        
         h = self.encoder(x)
         
         if self.model_type == "vae":
@@ -146,12 +160,55 @@ class JUMPVAE(pl.LightningModule):
         T_max: int = 10,                # Used if scheduler_type == "cosine"
         eta_min: float = 0.0,           # Used if scheduler_type == "cosine"
         warmup_epochs: int = 0,         # Used if scheduler_type == "cosine_with_warmup"
+        # Conditional parameters for genomic data
+        conditional_mode: bool = False,
+        conditional_dim: int = 0,  # total conditional embedding dimensions
         **kwargs
     ):
         super().__init__()
         self.save_hyperparameters()
         
         self.model_type = model_type
+        self.conditional_mode = conditional_mode
+        
+        # Set up embedding layers if in conditional mode
+        if conditional_mode:
+            # Get embedding dimensions from hyperparameters
+            # These should be passed when creating the model
+            cell_embedding_dim = kwargs.get('cell_embedding_dim', 32)
+            dose_embedding_dim = kwargs.get('dose_embedding_dim', 32) 
+            time_embedding_dim = kwargs.get('time_embedding_dim', 32)
+            n_cell_lines = kwargs.get('n_cell_lines', 24)
+            n_dose_levels = kwargs.get('n_dose_levels', 6)
+            n_time_points = kwargs.get('n_time_points', 2)
+            
+            # Create embedding layers
+            self.cell_embedding = nn.Embedding(
+                num_embeddings=n_cell_lines + 1,  # +1 for padding
+                embedding_dim=cell_embedding_dim,
+                padding_idx=0
+            )
+            self.dose_embedding = nn.Embedding(
+                num_embeddings=n_dose_levels + 1,  # +1 for padding
+                embedding_dim=dose_embedding_dim,
+                padding_idx=0
+            )
+            self.time_embedding = nn.Embedding(
+                num_embeddings=n_time_points + 1,  # +1 for padding
+                embedding_dim=time_embedding_dim,
+                padding_idx=0
+            )
+            
+            # Total conditional dimension
+            total_conditional_dim = cell_embedding_dim + dose_embedding_dim + time_embedding_dim
+            
+            print(f"Conditional VAE setup:")
+            print(f"  - Cell lines: {n_cell_lines} -> {cell_embedding_dim}D embeddings")
+            print(f"  - Dose levels: {n_dose_levels} -> {dose_embedding_dim}D embeddings")
+            print(f"  - Time points: {n_time_points} -> {time_embedding_dim}D embeddings")
+            print(f"  - Total conditional dim: {total_conditional_dim}")
+        else:
+            total_conditional_dim = conditional_dim
         
         # Model components
         self.encoder = VAEEncoder(
@@ -161,6 +218,8 @@ class JUMPVAE(pl.LightningModule):
             dropout=dropout,
             norm_type=norm_type,
             model_type=model_type,
+            conditional_mode=conditional_mode,
+            conditional_dim=total_conditional_dim,
         )
         
         self.decoder = VAEDecoder(
@@ -186,9 +245,22 @@ class JUMPVAE(pl.LightningModule):
         else:  # AE mode
             return mu  # Deterministic latent code
     
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor, conditional_features: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Forward pass through VAE/AE."""
-        mu, logvar = self.encoder(x)
+        if self.conditional_mode and conditional_features is not None:
+            # Embed conditional features
+            # conditional_features shape: [batch_size, 3] where 3 = [cell_idx, dose_idx, time_idx]
+            cell_emb = self.cell_embedding(conditional_features[:, 0])  # [batch_size, cell_embedding_dim]
+            dose_emb = self.dose_embedding(conditional_features[:, 1])  # [batch_size, dose_embedding_dim]
+            time_emb = self.time_embedding(conditional_features[:, 2])  # [batch_size, time_embedding_dim]
+            
+            # Concatenate embeddings
+            embedded_conditionals = torch.cat([cell_emb, dose_emb, time_emb], dim=-1)  # [batch_size, total_conditional_dim]
+            
+            mu, logvar = self.encoder(x, embedded_conditionals)
+        else:
+            mu, logvar = self.encoder(x, conditional_features)
+        
         z = self.reparameterize(mu, logvar)
         x_recon = self.decoder(z)
         return x_recon, mu, logvar
@@ -217,10 +289,18 @@ class JUMPVAE(pl.LightningModule):
         
         return total_loss, recon_loss, kl_loss
     
-    def training_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch, batch_idx: int) -> torch.Tensor:
         """Training step."""
-        x = batch
-        x_recon, mu, logvar = self.forward(x)
+        if self.conditional_mode:
+            # Expect batch to be a dict with 'genomic_features' and 'conditional_features'
+            x = batch['genomic_features']
+            conditional_features = batch['conditional_features']
+            x_recon, mu, logvar = self.forward(x, conditional_features)
+        else:
+            # Standard mode - batch is just the tensor
+            x = batch
+            x_recon, mu, logvar = self.forward(x)
+        
         
         total_loss, recon_loss, kl_loss = self.loss_function(x_recon, x, mu, logvar)
         
@@ -237,10 +317,17 @@ class JUMPVAE(pl.LightningModule):
     
         return total_loss
     
-    def validation_step(self, batch: torch.Tensor, batch_idx: int) -> Dict[str, torch.Tensor]:
+    def validation_step(self, batch, batch_idx: int) -> Dict[str, torch.Tensor]:
         """Validation step."""
-        x = batch
-        x_recon, mu, logvar = self.forward(x)
+        if self.conditional_mode:
+            # Expect batch to be a dict with 'genomic_features' and 'conditional_features'
+            x = batch['genomic_features']
+            conditional_features = batch['conditional_features']
+            x_recon, mu, logvar = self.forward(x, conditional_features)
+        else:
+            # Standard mode - batch is just the tensor
+            x = batch
+            x_recon, mu, logvar = self.forward(x)
         
         total_loss, recon_loss, kl_loss = self.loss_function(x_recon, x, mu, logvar)
         
@@ -261,10 +348,17 @@ class JUMPVAE(pl.LightningModule):
             'val_mae': mae,
         }
     
-    def test_step(self, batch: torch.Tensor, batch_idx: int) -> Dict[str, torch.Tensor]:
+    def test_step(self, batch, batch_idx: int) -> Dict[str, torch.Tensor]:
         """Test step - similar to validation step but for testing."""
-        x = batch
-        x_recon, mu, logvar = self.forward(x)
+        if self.conditional_mode:
+            # Expect batch to be a dict with 'genomic_features' and 'conditional_features'
+            x = batch['genomic_features']
+            conditional_features = batch['conditional_features']
+            x_recon, mu, logvar = self.forward(x, conditional_features)
+        else:
+            # Standard mode - batch is just the tensor
+            x = batch
+            x_recon, mu, logvar = self.forward(x)
         
         total_loss, recon_loss, kl_loss = self.loss_function(x_recon, x, mu, logvar)
         
@@ -359,9 +453,9 @@ class JUMPVAE(pl.LightningModule):
             "lr_scheduler": scheduler_cfg,
         }
     
-    def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def encode(self, x: torch.Tensor, conditional_features: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
         """Encode input to latent space."""
-        return self.encoder(x)
+        return self.encoder(x, conditional_features)
     
     def decode(self, z: torch.Tensor) -> torch.Tensor:
         """Decode latent representation to reconstruction."""
@@ -394,6 +488,9 @@ def create_vae_model(
     weight_decay: float = 1e-4,
     beta: float = 1.0,
     model_type: str = "vae",  # "vae" or "ae"
+    # Conditional parameters
+    conditional_mode: bool = False,
+    conditional_dim: int = 0,
     **kwargs
 ) -> JUMPVAE:
     """Create VAE/AE model with predefined architectures."""
@@ -421,5 +518,7 @@ def create_vae_model(
         weight_decay=weight_decay,
         beta=beta,
         model_type=model_type,
+        conditional_mode=conditional_mode,
+        conditional_dim=conditional_dim,
         **kwargs
     ) 

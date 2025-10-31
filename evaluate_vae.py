@@ -10,11 +10,13 @@ import pandas as pd
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
 import seaborn as sns
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score, r2_score
 from sklearn.cluster import KMeans
+from scipy.stats import rankdata
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader, TensorDataset
 
@@ -39,6 +41,8 @@ def compute_reconstruction_metrics(model: JUMPVAE, dataloader: DataLoader, devic
     
     all_original = []
     all_reconstructed = []
+    all_original_norm = []
+    all_reconstructed_norm = []
     all_latent = []
     
     # Get normalization parameters from dataset
@@ -62,6 +66,10 @@ def compute_reconstruction_metrics(model: JUMPVAE, dataloader: DataLoader, devic
             x_norm = batch.to(device)
             x_recon_norm, mu, logvar = model(x_norm)
             
+            # Store normalized versions
+            all_original_norm.append(x_norm.cpu().numpy())
+            all_reconstructed_norm.append(x_recon_norm.cpu().numpy())
+            
             # Denormalize to original space
             x_orig = x_norm.cpu().numpy() * feature_std.flatten() + feature_mean.flatten()
             x_recon_orig = x_recon_norm.cpu().numpy() * feature_std.flatten() + feature_mean.flatten()
@@ -73,11 +81,15 @@ def compute_reconstruction_metrics(model: JUMPVAE, dataloader: DataLoader, devic
     # Concatenate all batches
     original = np.concatenate(all_original, axis=0)
     reconstructed = np.concatenate(all_reconstructed, axis=0)
+    original_norm = np.concatenate(all_original_norm, axis=0)
+    reconstructed_norm = np.concatenate(all_reconstructed_norm, axis=0)
     latent = np.concatenate(all_latent, axis=0)
     
     # Debug: Check data ranges
     print(f"Original data range: {original.min():.3f} to {original.max():.3f}")
     print(f"Reconstructed data range: {reconstructed.min():.3f} to {reconstructed.max():.3f}")
+    print(f"Normalized original data range: {original_norm.min():.3f} to {original_norm.max():.3f}")
+    print(f"Normalized reconstructed data range: {reconstructed_norm.min():.3f} to {reconstructed_norm.max():.3f}")
     print(f"Original shape: {original.shape}")
     
     # Compute sample-wise metrics (average across features for each sample)
@@ -107,10 +119,25 @@ def compute_reconstruction_metrics(model: JUMPVAE, dataloader: DataLoader, devic
     print(f"Feature R² range: {np.nanmin(feature_r2):.3f} to {np.nanmax(feature_r2):.3f}")
     print(f"Sample MAE range: {np.nanmin(sample_mae):.3f} to {np.nanmax(sample_mae):.3f}")
     
-    # Additional R² statistics to understand the distribution
+    # Additional robust statistics for both MAE and R²
+    sample_mae_clean = sample_mae[~np.isnan(sample_mae)]
     feature_r2_clean = feature_r2[~np.isnan(feature_r2)]
+    
+    # MAE outlier analysis
+    mae_extreme_outliers = np.sum(sample_mae_clean > np.percentile(sample_mae_clean, 95) + 3 * (np.percentile(sample_mae_clean, 95) - np.percentile(sample_mae_clean, 5)))
+    
+    print(f"\n📊 Sample MAE Distribution Analysis:")
+    print(f"   Median MAE: {np.median(sample_mae_clean):.6f}")
+    print(f"   75th percentile MAE: {np.percentile(sample_mae_clean, 75):.6f}")
+    print(f"   90th percentile MAE: {np.percentile(sample_mae_clean, 90):.6f}")
+    print(f"   95th percentile MAE: {np.percentile(sample_mae_clean, 95):.6f}")
+    print(f"   Samples with very high MAE (extreme outliers): {mae_extreme_outliers} ({mae_extreme_outliers/len(sample_mae_clean)*100:.1f}%)")
+    print(f"   Samples with MAE < 1.0: {np.sum(sample_mae_clean < 1.0)} ({np.sum(sample_mae_clean < 1.0)/len(sample_mae_clean)*100:.1f}%)")
+    print(f"   Samples with MAE < 0.5: {np.sum(sample_mae_clean < 0.5)} ({np.sum(sample_mae_clean < 0.5)/len(sample_mae_clean)*100:.1f}%)")
+    
+    # R² outlier analysis
     extreme_negative_count = np.sum(feature_r2_clean < -10)
-    print(f"\n📊 R² Distribution Analysis:")
+    print(f"\n📊 Feature R² Distribution Analysis:")
     print(f"   Median R²: {np.median(feature_r2_clean):.3f}")
     print(f"   75th percentile R²: {np.percentile(feature_r2_clean, 75):.3f}")
     print(f"   90th percentile R²: {np.percentile(feature_r2_clean, 90):.3f}")
@@ -122,10 +149,16 @@ def compute_reconstruction_metrics(model: JUMPVAE, dataloader: DataLoader, devic
     metrics = {
         'original': original,
         'reconstructed': reconstructed,
+        'original_norm': original_norm,
+        'reconstructed_norm': reconstructed_norm,
         'latent': latent,
         'sample_mae': sample_mae,
         'feature_r2': feature_r2,
         'mean_sample_mae': np.nanmean(sample_mae),
+        'median_sample_mae': np.median(sample_mae_clean),
+        'percentile_75_sample_mae': np.percentile(sample_mae_clean, 75),
+        'percentile_95_sample_mae': np.percentile(sample_mae_clean, 95),
+        'mae_extreme_outliers_count': mae_extreme_outliers,
         'mean_feature_r2': np.nanmean(feature_r2),
         'median_feature_r2': np.median(feature_r2_clean),
         'percentile_75_feature_r2': np.percentile(feature_r2_clean, 75),
@@ -138,83 +171,72 @@ def compute_reconstruction_metrics(model: JUMPVAE, dataloader: DataLoader, devic
 
 
 def plot_reconstruction_quality(metrics: dict, save_path: str = None):
-    """Reconstruction quality plots: Sample MAE (zoomed), Feature R² distribution (zoomed), and reconstruction scatterplot."""
+    """Reconstruction quality plots: Sample MAE (zoomed) and Feature R² distribution (zoomed)."""
     
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
     
-    # 1. Sample-wise MAE distribution (ZOOMED to 0-50 range)
-    axes[0, 0].hist(metrics['sample_mae'], bins=50, alpha=0.7, edgecolor='black', color='skyblue')
-    axes[0, 0].axvline(metrics['mean_sample_mae'], color='red', linestyle='--', linewidth=2,
-                       label=f'Mean: {metrics["mean_sample_mae"]:.4f}')
+    # 1. Sample-wise MAE distribution (ZOOMED to 0-50 range with bin size 1)
+    mae_in_range = metrics['sample_mae'][(metrics['sample_mae'] >= 0) & (metrics['sample_mae'] <= 50)]
+    total_samples = len(metrics['sample_mae'])
+    shown_samples = len(mae_in_range)
+    
+    axes[0, 0].hist(mae_in_range, bins=range(0, 51, 1), alpha=0.7, edgecolor='black', color='skyblue')
+    axes[0, 0].axvline(metrics['median_sample_mae'], color='green', linestyle='--', linewidth=2,
+                       label=f'Median: {metrics["median_sample_mae"]:.4f}')
+    axes[0, 0].axvline(metrics['percentile_75_sample_mae'], color='orange', linestyle='--', linewidth=2,
+                       label=f'75th %ile: {metrics["percentile_75_sample_mae"]:.4f}')
     axes[0, 0].set_xlabel('Sample MAE (Original Space)')
     axes[0, 0].set_ylabel('Frequency')
-    axes[0, 0].set_title('Sample-wise MAE Distribution (Zoomed 0-50)')
+    axes[0, 0].set_title(f'Sample-wise MAE Distribution\n({shown_samples:,} of {total_samples:,} samples shown, range 0-50)')
     axes[0, 0].set_xlim(0, 50)  # Zoom to 0-50 range
     axes[0, 0].legend()
     axes[0, 0].grid(True, alpha=0.3)
     
-    # 2. Feature-wise R² distribution (ZOOMED to reasonable range) - moved from position [1,0]
+    # 2. Feature-wise R² distribution (ZOOMED to -1 to 1 range)
     valid_feature_r2 = metrics['feature_r2'][~np.isnan(metrics['feature_r2'])]
-    reasonable_r2 = valid_feature_r2[valid_feature_r2 > -10]  # Remove extreme outliers
-    axes[0, 1].hist(reasonable_r2, bins=50, alpha=0.7, edgecolor='black', color='lightgreen')
-    axes[0, 1].axvline(np.median(reasonable_r2), color='green', linestyle='--', linewidth=2,
-                       label=f'Median: {np.median(reasonable_r2):.3f}')
-    axes[0, 1].axvline(np.percentile(reasonable_r2, 75), color='orange', linestyle='--', linewidth=2,
-                       label=f'75th %ile: {np.percentile(reasonable_r2, 75):.3f}')
+    r2_in_range = valid_feature_r2[(valid_feature_r2 >= -1) & (valid_feature_r2 <= 1)]
+    total_features = len(valid_feature_r2)
+    shown_features = len(r2_in_range)
+    
+    axes[0, 1].hist(r2_in_range, bins=50, alpha=0.7, edgecolor='black', color='lightgreen')
+    axes[0, 1].axvline(np.median(r2_in_range), color='green', linestyle='--', linewidth=2,
+                       label=f'Median: {np.median(r2_in_range):.3f}')
+    axes[0, 1].axvline(np.percentile(r2_in_range, 75), color='orange', linestyle='--', linewidth=2,
+                       label=f'75th %ile: {np.percentile(r2_in_range, 75):.3f}')
     axes[0, 1].set_xlabel('Feature R² (Original Space)')
     axes[0, 1].set_ylabel('Frequency')
-    axes[0, 1].set_title(f'Feature R² Distribution ({len(reasonable_r2)}/{len(valid_feature_r2)} features, R² > -10)')
+    axes[0, 1].set_title(f'Feature R² Distribution\n({shown_features:,} of {total_features:,} features shown, range -1 to 1)')
+    axes[0, 1].set_xlim(-1, 1)  # Zoom to -1 to 1 range
     axes[0, 1].legend()
     axes[0, 1].grid(True, alpha=0.3)
     
-    # 3. Reconstruction scatterplot - subsample for visualization
-    orig_flat = metrics['original'].flatten()
-    recon_flat = metrics['reconstructed'].flatten()
+    # 3. Reconstruction density plot - using normalized features
+    orig_norm_flat = metrics['original_norm'].flatten()
+    recon_norm_flat = metrics['reconstructed_norm'].flatten()
     
     # Remove any NaN or infinite values
-    valid_mask = np.isfinite(orig_flat) & np.isfinite(recon_flat)
-    orig_flat = orig_flat[valid_mask]
-    recon_flat = recon_flat[valid_mask]
+    valid_mask = np.isfinite(orig_norm_flat) & np.isfinite(recon_norm_flat)
+    orig_norm_flat = orig_norm_flat[valid_mask]
+    recon_norm_flat = recon_norm_flat[valid_mask]
     
-    # Subsample for better visualization (use every 100th point if dataset is large)
-    if len(orig_flat) > 10000:
-        subsample_idx = np.arange(0, len(orig_flat), len(orig_flat)//10000)
-        orig_sample = orig_flat[subsample_idx]
-        recon_sample = recon_flat[subsample_idx]
-    else:
-        orig_sample = orig_flat
-        recon_sample = recon_flat
-    
-    axes[1, 0].scatter(orig_sample, recon_sample, alpha=0.5, s=1, color='blue')
-    axes[1, 0].plot([orig_sample.min(), orig_sample.max()], [orig_sample.min(), orig_sample.max()], 
+    # Use all points, not subsampled - create density plot with log scale
+    hb = axes[1, 0].hexbin(orig_norm_flat, recon_norm_flat, gridsize=75, cmap='viridis', 
+                           mincnt=1, norm=LogNorm())
+    axes[1, 0].plot([orig_norm_flat.min(), orig_norm_flat.max()], 
+                    [orig_norm_flat.min(), orig_norm_flat.max()], 
                     'r--', linewidth=2, label='Perfect Reconstruction')
-    axes[1, 0].set_xlabel('Original Feature Values')
-    axes[1, 0].set_ylabel('Reconstructed Feature Values')
-    axes[1, 0].set_title(f'Reconstruction Scatterplot\n(Subsample: {len(orig_sample):,} points)')
+    axes[1, 0].set_xlabel('Original Normalized Feature Values')
+    axes[1, 0].set_ylabel('Reconstructed Normalized Feature Values')
+    axes[1, 0].set_title(f'Reconstruction Density Plot (Normalized Space)\n({len(orig_norm_flat):,} points)')
     axes[1, 0].legend()
     axes[1, 0].grid(True, alpha=0.3)
     
-    # 4. Feature correlation plot - show correlation between original and reconstructed per feature
-    feature_corr = []
-    for j in range(metrics['original'].shape[1]):
-        orig_feature = metrics['original'][:, j]
-        recon_feature = metrics['reconstructed'][:, j]
-        if np.var(orig_feature) > 1e-10 and np.var(recon_feature) > 1e-10:
-            corr = np.corrcoef(orig_feature, recon_feature)[0, 1]
-            if np.isfinite(corr):
-                feature_corr.append(corr)
+    # Add colorbar with log scale
+    cbar = plt.colorbar(hb, ax=axes[1, 0])
+    cbar.set_label('Point Density (log scale)', rotation=270, labelpad=15)
     
-    feature_corr = np.array(feature_corr)
-    axes[1, 1].hist(feature_corr, bins=50, alpha=0.7, edgecolor='black', color='lightcoral')
-    axes[1, 1].axvline(np.mean(feature_corr), color='red', linestyle='--', linewidth=2,
-                       label=f'Mean: {np.mean(feature_corr):.3f}')
-    axes[1, 1].axvline(np.median(feature_corr), color='green', linestyle='--', linewidth=2,
-                       label=f'Median: {np.median(feature_corr):.3f}')
-    axes[1, 1].set_xlabel('Feature Correlation (Original vs Reconstructed)')
-    axes[1, 1].set_ylabel('Frequency')
-    axes[1, 1].set_title(f'Feature-wise Correlation Distribution\n({len(feature_corr)} features)')
-    axes[1, 1].legend()
-    axes[1, 1].grid(True, alpha=0.3)
+    # 4. Remove the bottom-right plot (keep it empty)
+    axes[1, 1].remove()
     
     plt.tight_layout()
     
@@ -226,118 +248,71 @@ def plot_reconstruction_quality(metrics: dict, save_path: str = None):
 
 
 def analyze_latent_space(metrics: dict, save_path: str = None):
-    """Analyze the learned latent space with reconstruction error coloring."""
+    """Analyze the learned latent space with percentile-based reconstruction error coloring."""
     latent = metrics['latent']
     sample_mae = metrics['sample_mae']
     
-    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+    # Convert MAE to percentiles for better color distribution (handles outliers)
+    mae_percentiles = (rankdata(sample_mae) - 1) / (len(sample_mae) - 1) * 100
     
-    # PCA on latent space colored by reconstruction error
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+    
+    # PCA on latent space colored by MAE percentiles
     pca = PCA(n_components=2, random_state=42)
     latent_pca = pca.fit_transform(latent)
     
-    scatter1 = axes[0, 0].scatter(latent_pca[:, 0], latent_pca[:, 1], 
-                                 c=sample_mae, cmap='viridis', alpha=0.7, s=20)
-    axes[0, 0].set_xlabel(f'PC1 ({pca.explained_variance_ratio_[0]:.3f})')
-    axes[0, 0].set_ylabel(f'PC2 ({pca.explained_variance_ratio_[1]:.3f})')
-    axes[0, 0].set_title('PCA - Colored by Reconstruction Error')
-    axes[0, 0].grid(True, alpha=0.3)
-    plt.colorbar(scatter1, ax=axes[0, 0], label='Sample MAE')
+    scatter1 = axes[0].scatter(latent_pca[:, 0], latent_pca[:, 1], 
+                              c=mae_percentiles, cmap='viridis', alpha=0.7, s=20)
+    axes[0].set_xlabel(f'PC1 ({pca.explained_variance_ratio_[0]:.3f})')
+    axes[0].set_ylabel(f'PC2 ({pca.explained_variance_ratio_[1]:.3f})')
+    axes[0].set_title('PCA - Colored by MAE Percentile')
+    axes[0].grid(True, alpha=0.3)
+    cbar1 = plt.colorbar(scatter1, ax=axes[0])
+    cbar1.set_label('MAE Percentile (%)', rotation=270, labelpad=15)
     
-    # t-SNE on latent space colored by reconstruction error (subsample for efficiency)
+    # t-SNE on latent space colored by MAE percentiles (subsample for efficiency)
     if len(latent) > 5000:
         idx = np.random.choice(len(latent), 5000, replace=False)
         latent_subset = latent[idx]
-        mae_subset = sample_mae[idx]
+        mae_percentiles_subset = mae_percentiles[idx]
     else:
         latent_subset = latent
-        mae_subset = sample_mae
+        mae_percentiles_subset = mae_percentiles
         idx = np.arange(len(latent))
     
     tsne = TSNE(n_components=2, random_state=42, perplexity=min(30, len(latent_subset)-1))
     latent_tsne = tsne.fit_transform(latent_subset)
     
-    scatter2 = axes[0, 1].scatter(latent_tsne[:, 0], latent_tsne[:, 1], 
-                                 c=mae_subset, cmap='viridis', alpha=0.7, s=20)
-    axes[0, 1].set_xlabel('t-SNE 1')
-    axes[0, 1].set_ylabel('t-SNE 2')
-    axes[0, 1].set_title('t-SNE - Colored by Reconstruction Error')
-    axes[0, 1].grid(True, alpha=0.3)
-    plt.colorbar(scatter2, ax=axes[0, 1], label='Sample MAE')
-    
-    # Latent dimension statistics
-    latent_means = np.mean(latent, axis=0)
-    latent_stds = np.std(latent, axis=0)
-    
-    axes[0, 2].plot(latent_means, label='Mean', color='blue', linewidth=2)
-    axes[0, 2].plot(latent_stds, label='Std', color='orange', linewidth=2)
-    axes[0, 2].set_xlabel('Latent Dimension')
-    axes[0, 2].set_ylabel('Value')
-    axes[0, 2].set_title('Latent Dimension Statistics')
-    axes[0, 2].legend()
-    axes[0, 2].grid(True, alpha=0.3)
-    
-    # Reconstruction error vs latent magnitude
-    latent_norms = np.linalg.norm(latent, axis=1)
-    axes[1, 0].scatter(latent_norms, sample_mae, alpha=0.6, s=10)
-    axes[1, 0].set_xlabel('Latent Vector Magnitude')
-    axes[1, 0].set_ylabel('Sample MAE')
-    axes[1, 0].set_title('Reconstruction Error vs Latent Magnitude')
-    axes[1, 0].grid(True, alpha=0.3)
-    
-    # Clustering analysis
-    n_clusters_range = range(2, min(11, len(latent)//10 + 2))  # Ensure reasonable cluster range
-    silhouette_scores = []
-    
-    for n_clusters in n_clusters_range:
-        if n_clusters < len(latent):
-            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-            cluster_labels = kmeans.fit_predict(latent)
-            silhouette_avg = silhouette_score(latent, cluster_labels)
-            silhouette_scores.append(silhouette_avg)
-        else:
-            silhouette_scores.append(0)
-    
-    if silhouette_scores:
-        axes[1, 1].plot(n_clusters_range, silhouette_scores, 'o-', linewidth=2, markersize=6)
-        axes[1, 1].set_xlabel('Number of Clusters')
-        axes[1, 1].set_ylabel('Silhouette Score')
-        axes[1, 1].set_title('Clustering Quality in Latent Space')
-        axes[1, 1].grid(True, alpha=0.3)
-        
-        # Best clustering result
-        best_n_clusters = n_clusters_range[np.argmax(silhouette_scores)]
-        best_silhouette_score = max(silhouette_scores)
-    else:
-        axes[1, 1].text(0.5, 0.5, 'Insufficient data for clustering', 
-                       ha='center', va='center', transform=axes[1, 1].transAxes)
-        best_n_clusters = 2
-        best_silhouette_score = 0
-    
-    # Latent space distribution (show actual values distribution)
-    latent_flat = latent.flatten()
-    axes[1, 2].hist(latent_flat, bins=50, alpha=0.7, edgecolor='black', color='lightcoral')
-    axes[1, 2].axvline(np.mean(latent_flat), color='red', linestyle='--', linewidth=2,
-                      label=f'Mean: {np.mean(latent_flat):.3f}')
-    axes[1, 2].set_xlabel('Latent Values')
-    axes[1, 2].set_ylabel('Frequency')
-    axes[1, 2].set_title('Latent Space Value Distribution')
-    axes[1, 2].legend()
-    axes[1, 2].grid(True, alpha=0.3)
+    scatter2 = axes[1].scatter(latent_tsne[:, 0], latent_tsne[:, 1], 
+                              c=mae_percentiles_subset, cmap='viridis', alpha=0.7, s=20)
+    axes[1].set_xlabel('t-SNE 1')
+    axes[1].set_ylabel('t-SNE 2')
+    axes[1].set_title('t-SNE - Colored by MAE Percentile')
+    axes[1].grid(True, alpha=0.3)
+    cbar2 = plt.colorbar(scatter2, ax=axes[1])
+    cbar2.set_label('MAE Percentile (%)', rotation=270, labelpad=15)
     
     plt.tight_layout()
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Clean latent space analysis plot saved to: {save_path}")
+        print(f"Simplified latent space analysis plot saved to: {save_path}")
     
     plt.show()
     
+    # Print percentile information for context
+    print(f"\n📊 MAE Percentile Analysis:")
+    print(f"   50th percentile (median): {np.percentile(sample_mae, 50):.6f}")
+    print(f"   75th percentile: {np.percentile(sample_mae, 75):.6f}")
+    print(f"   90th percentile: {np.percentile(sample_mae, 90):.6f}")
+    print(f"   95th percentile: {np.percentile(sample_mae, 95):.6f}")
+    print(f"   99th percentile: {np.percentile(sample_mae, 99):.6f}")
+    
     return {
-        'best_n_clusters': best_n_clusters,
-        'best_silhouette_score': best_silhouette_score,
         'pca_explained_variance': pca.explained_variance_ratio_[:2],
-        'latent_magnitude_correlation': np.corrcoef(latent_norms, sample_mae)[0, 1] if len(latent_norms) > 1 else 0
+        'mae_percentile_50': np.percentile(sample_mae, 50),
+        'mae_percentile_75': np.percentile(sample_mae, 75),
+        'mae_percentile_95': np.percentile(sample_mae, 95),
     }
 
 
@@ -371,6 +346,8 @@ def generate_report(model: JUMPVAE, metrics: dict, latent_analysis: dict, save_p
 
 ### Sample-wise Performance
 - Mean MAE: {metrics['mean_sample_mae']:.6f} ± {metrics['std_sample_mae']:.6f}
+- **Median MAE (robust)**: {metrics['median_sample_mae']:.6f}
+- **75th percentile MAE**: {metrics['percentile_75_sample_mae']:.6f}
 - Number of samples: {len(metrics['sample_mae']):,}
 
 ### Feature-wise Performance  
@@ -385,15 +362,22 @@ def generate_report(model: JUMPVAE, metrics: dict, latent_analysis: dict, save_p
 - Features with poor reconstruction (R² < 0.5): {poor_r2} / {len(feature_r2_clean)} ({poor_r2/len(feature_r2_clean)*100:.1f}%)
 
 ### ⚠️ Mean vs. Median Discrepancy Analysis
+
+#### MAE Outlier Analysis
+- **Samples with extreme high MAE**: {metrics['mae_extreme_outliers_count']} / {len(metrics['sample_mae'])} ({metrics['mae_extreme_outliers_count']/len(metrics['sample_mae'])*100:.1f}%)
+- **Recommendation**: Focus on median MAE ({metrics['median_sample_mae']:.6f}) as it's more representative of typical performance
+
+#### R² Outlier Analysis
 - **Features with extreme negative R² (< -10)**: {extreme_negative_count} / {len(feature_r2_clean)} ({extreme_negative_count/len(feature_r2_clean)*100:.1f}%)
 - **Note**: The very negative mean R² is caused by {extreme_negative_count} features with extreme outlier values
 - **Recommendation**: Focus on median R² ({median_r2:.3f}) as it's more representative of typical performance
 
 ## Latent Space Analysis
-- Best number of clusters: {latent_analysis['best_n_clusters']}
-- Best silhouette score: {latent_analysis['best_silhouette_score']:.4f}
 - PCA explained variance (PC1, PC2): {latent_analysis['pca_explained_variance'][0]:.4f}, {latent_analysis['pca_explained_variance'][1]:.4f}
-- Latent magnitude vs reconstruction error correlation: {latent_analysis['latent_magnitude_correlation']:.4f}
+- MAE percentiles for color scale:
+  - 50th percentile (median): {latent_analysis['mae_percentile_50']:.6f}
+  - 75th percentile: {latent_analysis['mae_percentile_75']:.6f}
+  - 95th percentile: {latent_analysis['mae_percentile_95']:.6f}
 
 ## Model Parameters
 - Total parameters: {sum(p.numel() for p in model.parameters()):,}
@@ -402,13 +386,14 @@ def generate_report(model: JUMPVAE, metrics: dict, latent_analysis: dict, save_p
 ## Performance Assessment
 """
     
-    # Add performance-based recommendations
-    if metrics['mean_sample_mae'] < 1.0:
-        report += "- Low reconstruction error in original space\n"
-    elif metrics['mean_sample_mae'] < 5.0:
-        report += "- Moderate reconstruction error in original space\n"
+    # Add performance-based recommendations (using robust median)
+    median_mae = metrics['median_sample_mae']
+    if median_mae < 1.0:
+        report += f"- Low reconstruction error in original space (Median MAE = {median_mae:.6f} < 1.0)\n"
+    elif median_mae < 5.0:
+        report += f"- Moderate reconstruction error in original space (Median MAE = {median_mae:.6f} < 5.0)\n"
     else:
-        report += "- High reconstruction error - model may need more capacity or training\n"
+        report += f"- High reconstruction error - model may need more capacity or training (Median MAE = {median_mae:.6f})\n"
     
     # Use median R² for performance assessment (more robust than mean)
     if median_r2 > 0.8:
@@ -420,7 +405,10 @@ def generate_report(model: JUMPVAE, metrics: dict, latent_analysis: dict, save_p
     else:
         report += f"- Poor feature reconstruction (Median R² = {median_r2:.3f}) - consider model improvements\n"
     
-    # Additional note about mean vs median
+    # Additional notes about mean vs median discrepancies
+    if metrics['mae_extreme_outliers_count'] > 0:
+        report += f"- **Note**: Mean MAE ({metrics['mean_sample_mae']:.6f}) is misleading due to {metrics['mae_extreme_outliers_count']} extreme outliers\n"
+    
     if extreme_negative_count > 0:
         report += f"- **Note**: Mean R² ({metrics['mean_feature_r2']:.3f}) is misleading due to {extreme_negative_count} extreme outliers\n"
     
@@ -431,20 +419,19 @@ def generate_report(model: JUMPVAE, metrics: dict, latent_analysis: dict, save_p
     else:
         report += "- Feature reconstruction quality varies significantly\n"
     
-    if latent_analysis['best_silhouette_score'] > 0.5:
-        report += "- Latent space shows good clustering structure\n"
-    elif latent_analysis['best_silhouette_score'] > 0.2:
-        report += "- Latent space shows moderate clustering structure\n"
+    # Simplified latent space assessment based on percentile distribution
+    mae_range = latent_analysis['mae_percentile_95'] - latent_analysis['mae_percentile_50']
+    if mae_range < latent_analysis['mae_percentile_50']:
+        report += "- Good reconstruction consistency across latent space (narrow MAE range)\n"
     else:
-        report += "- Latent space shows poor clustering - consider different architectures\n"
+        report += "- Reconstruction quality varies significantly across latent space\n"
     
-    abs_correlation = abs(latent_analysis['latent_magnitude_correlation'])
-    if abs_correlation > 0.5:
-        report += f"- Strong correlation ({latent_analysis['latent_magnitude_correlation']:.3f}) between latent magnitude and reconstruction error\n"
-    elif abs_correlation > 0.2:
-        report += f"- Moderate correlation ({latent_analysis['latent_magnitude_correlation']:.3f}) between latent magnitude and reconstruction error\n"
+    # PCA variance assessment
+    total_pca_variance = sum(latent_analysis['pca_explained_variance'])
+    if total_pca_variance > 0.5:
+        report += f"- First 2 PCA components capture {total_pca_variance:.1%} of latent variance\n"
     else:
-        report += "- Weak correlation between latent magnitude and reconstruction error\n"
+        report += f"- Latent space is high-dimensional (first 2 PCs: {total_pca_variance:.1%})\n"
     
     if save_path:
         with open(save_path, 'w') as f:

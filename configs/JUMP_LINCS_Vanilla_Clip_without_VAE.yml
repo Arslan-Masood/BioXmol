@@ -1,0 +1,100 @@
+seed: 0
+split: 0  # Default split, will be overridden by command line
+base_split_path: /scratch/work/masooda1/datasets/LINCS_preprocessed/LINCS_splits
+
+dataloaders:
+  _target_: training.build_dataloaders
+  dataset:
+    _target_: dataset.CellLineTripleInputGraphDatasetJUMP
+    data_path: /scratch/work/masooda1/datasets/jump_preprocessed/jump_data_splits/cell_fetures_with_smiles.parquet
+    genomic_data_path: /scratch/work/masooda1/datasets/LINCS_preprocessed/landmark_cmp_data_min1000compounds_all_measurements.parquet
+    #data_path: /scratch/work/masooda1/datasets/jump_preprocessed/dummy_data/cell_fetures_with_smiles_2000.parquet
+    #genomic_data_path: /scratch/work/masooda1/datasets/LINCS_preprocessed/landmark_cmp_data_min1000compounds_all_measurements_test.parquet
+    pad_length: 250
+  splits:
+    train: ${base_split_path}/JUMP-LINCS-compound-split-${split}-train.csv
+    val: ${base_split_path}/JUMP-LINCS-compound-split-${split}-val.csv
+    test: ${base_split_path}/JUMP-LINCS-compound-split-${split}-val.csv
+  batch_size: 
+  num_workers: 
+  pin_memory: true
+
+model:
+  _target_: model.CellLineTripleInputEncoder
+  # encoder_a: Always specified since it's the molecular encoder (not pretrained)
+  encoder_a:
+    _target_: model.GatedGraphNeuralNetwork
+    n_edge: 1
+    in_dim: 75
+    n_conv: 6
+    fc_dims:
+    - 1024
+    - 128  # Final layer to match pretrained encoder dimensions
+    p_dropout: 0.1
+  # encoder_b and encoder_c: Architecture loaded from pretrained checkpoints
+  # No need to specify structure when using pretrained models
+  encoder_b: null  # Will be replaced by pretrained encoder
+  encoder_c: null  # Will be replaced by pretrained encoder
+  # Pretrained encoder configurations
+
+  # ============= PRETRAINED ENCODER CONFIGURATION =============
+  # Set paths to pretrained checkpoints (set to null to use randomly initialized encoders)
+  pretrained_encoder_b_path: "/scratch/work/masooda1/Multi_Modal_Contrastive/vae_logs_jump_cp/jump_ae_best/checkpoints/best-epoch=2094-val_total_loss=0.103.ckpt"  # Path to JUMP CP autoencoder
+  pretrained_encoder_c_path: "/scratch/work/masooda1/Multi_Modal_Contrastive/vae_logs_lincs_conditional/genomic_conditional_ae_best/checkpoints/best-epoch=6902-val_total_loss=0.497.ckpt"  # Path to genomic autoencoder
+  
+  # Weight loading options - control whether to load pretrained weights or just architecture
+  load_pretrained_weights_b: false   # Setting 1: false = architecture only, Setting 2: true = load weights
+  load_pretrained_weights_c: false   # Setting 1: false = architecture only, Setting 2: true = load weights
+
+  # Freezing options - set to true to freeze pretrained weights
+  freeze_encoder_b: false     # Whether to freeze morphological encoder (allow fine-tuning)
+  freeze_encoder_c: false     # Whether to freeze genomic encoder (allow fine-tuning)
+  
+  
+  # Note: use_latent_layer is now always true by default (best practice for AE/VAE)
+  # =============================================================
+
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 
+scheduler:
+  _target_: cosine_annealing_warmup.scheduler.CosineAnnealingWarmupRestarts
+  first_cycle_steps: 100
+  cycle_mult: 1
+  max_lr: 
+  min_lr: 1.0e-08
+  warmup_steps: 50
+scheduler_config:
+  monitor: val/loss
+trainer:
+  _target_: pytorch_lightning.Trainer
+  gpus: 1
+  num_nodes: 1
+  precision: 32
+  max_epochs: 1000
+  min_epochs: 1000
+  fast_dev_run: false
+  check_val_every_n_epoch: 2
+  callbacks:
+  - _target_: pytorch_lightning.callbacks.early_stopping.EarlyStopping
+    monitor: val/morph_acc
+    mode: max
+    patience: 2000
+  - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+    monitor: val/morph_acc
+    mode: max
+    save_top_k: 1
+    dirpath:
+  #- _target_: training.TrainingMonitor
+  logger:
+    _target_: pytorch_lightning.loggers.NeptuneLogger
+    project: 
+    name: 
+    api_key: 
+    log_model_checkpoints: false
+test_model:
+  _target_: model.CellLineTripleInputEncoder
+  encoder_a: ${model.encoder_a}
+  encoder_b: ${model.encoder_b}
+  encoder_c: ${model.encoder_c}
+test_model_ckpt: 

@@ -1,25 +1,25 @@
 import pandas as pd
 
-data_path = "/scratch/work/masooda1/Multi_Modal_Contrastive/data/jump_data/cell_fetures_with_smiles.parquet"
+data_path = "/scratch/project_462000766/Multi_Modal_Contrastive/data/jump_data/cell_fetures_with_smiles.parquet"
 genomic_data_path = "/scratch/cs/pml/AI_drug/molecular_representation_learning/LINCS/landmark_cmp_data_min1000compounds_all_measurements.parquet"
 
 #JUMP-LINCS
 print("Checking JUMP-LINCS splits")
-train = "/scratch/work/masooda1/Multi_Modal_Contrastive/data/LINCS_All_cell_lines/JUMP-LINCS-compound-split-0-train.csv"
-val = "/scratch/work/masooda1/Multi_Modal_Contrastive/data/LINCS_All_cell_lines/JUMP-LINCS-compound-split-0-val.csv"
-test = "/scratch/work/masooda1/Multi_Modal_Contrastive/data/LINCS_All_cell_lines/JUMP-LINCS-compound-split-0-val.csv"
+train = "/scratch/project_462000766/Multi_Modal_Contrastive/data/LINCS_All_cell_lines/JUMP-LINCS-compound-split-0-train.csv"
+val = "/scratch/project_462000766/Multi_Modal_Contrastive/data/LINCS_All_cell_lines/JUMP-LINCS-compound-split-0-val.csv"
+test = "/scratch/project_462000766/Multi_Modal_Contrastive/data/LINCS_All_cell_lines/JUMP-LINCS-compound-split-0-val.csv"
 
 #JUMP
 #print("Checking JUMP splits")
-#train = "/scratch/work/masooda1/Multi_Modal_Contrastive/data/jump/jump-compound-split-0-train.csv"
-#val = "/scratch/work/masooda1/Multi_Modal_Contrastive/data/jump/jump-compound-split-0-val.csv"
-#test = "/scratch/work/masooda1/Multi_Modal_Contrastive/data/jump/jump-compound-split-0-val.csv"
+#train = "/scratch/project_462000766/Multi_Modal_Contrastive/data/jump/jump-compound-split-0-train.csv"
+#val = "/scratch/project_462000766/Multi_Modal_Contrastive/data/jump/jump-compound-split-0-val.csv"
+#test = "/scratch/project_462000766/Multi_Modal_Contrastive/data/jump/jump-compound-split-0-val.csv"
 
 # LINCS
 #print("Checking LINCS splits")
-#train = "/scratch/work/masooda1/Multi_Modal_Contrastive/data/LINCS_All_cell_lines/LINCS-compound-split-0-train.csv"
-#val = "/scratch/work/masooda1/Multi_Modal_Contrastive/data/LINCS_All_cell_lines/LINCS-compound-split-0-val.csv"
-#test = "/scratch/work/masooda1/Multi_Modal_Contrastive/data/LINCS_All_cell_lines/LINCS-compound-split-0-val.csv"
+#train = "/scratch/project_462000766/Multi_Modal_Contrastive/data/LINCS_All_cell_lines/LINCS-compound-split-0-train.csv"
+#val = "/scratch/project_462000766/Multi_Modal_Contrastive/data/LINCS_All_cell_lines/LINCS-compound-split-0-val.csv"
+#test = "/scratch/project_462000766/Multi_Modal_Contrastive/data/LINCS_All_cell_lines/LINCS-compound-split-0-val.csv"
 
 # read datafile
 cell_data = pd.read_parquet(data_path)

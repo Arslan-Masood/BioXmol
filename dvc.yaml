@@ -35,6 +35,45 @@ stages:
       - data/process_LINCS_data.py
     desc: "Process LINCS data"
 
+  # Create LINCS data splits
+  create_lincs_splits:
+    cmd: >
+      sbatch data/create_lincs_splits.sh
+      /scratch/work/masooda1/datasets/LINCS_preprocessed/landmark_cmp_data_min1000compounds_all_measurements.parquet
+      /scratch/work/masooda1/datasets/jump_preprocessed/jump_data_splits
+      /scratch/work/masooda1/datasets/LINCS_preprocessed/LINCS_splits
+      mocop
+    deps:
+      - data/create_lincs_splits.sh
+      - data/LINCS_splitting_all_cell_lines.py
+    desc: "Create LINCS and combined JUMP-LINCS data splits"
+
+  # Check for invalid SMILES in datasets
+  check_invalid_smiles:
+    cmd: >
+      sbatch data/check_invalid_smiles.sh
+      /scratch/work/masooda1/datasets/jump_preprocessed/jump_data_splits/cell_fetures_with_smiles.parquet
+      /scratch/work/masooda1/datasets/LINCS_preprocessed/landmark_cmp_data_min1000compounds_all_measurements.parquet
+      /scratch/work/masooda1/datasets/failed_SMILES/failed_molecules_report.csv
+      mocop
+    deps:
+      - data/check_invalid_smiles.sh
+      - check_invalid_smiles.py
+      - mocop/featurizer/smiles_transformation.py
+    desc: "Check for invalid SMILES in cell and genomic datasets"
+
+# JUMP VAE Hyperparameter Sweep
+  vae_sweep_jump:
+    cmd: >
+      sbatch scripts/vae_sweep_JUMP.sh
+    deps:
+      - scripts/vae_sweep_JUMP.sh
+      - configs/train_ae_config.yaml
+      - train_vae.py
+    outs:
+      - vae_logs/
+    desc: "Run VAE hyperparameter sweep on JUMP data"
+
   # Train Autoencoder on JUMP data
   train_ae_for_jump_cp:
     cmd: >
@@ -74,9 +113,273 @@ stages:
       - vae_logs_jump_cp/jump_ae_best/checkpoints/last.ckpt
       - vae_logs_jump_cp/jump_ae_best/normalization_params.npz
     desc: "Evaluate trained Autoencoder on JUMP data"
-    
-#
-#  # Multi-Modal Contrastive Learning Stages
+
+  # LINCS VAE Hyperparameter Sweep  
+  vae_sweep_lincs:
+    cmd: >
+      sbatch scripts/vae_sweep_LINCS.sh
+    deps:
+      - scripts/vae_sweep_LINCS.sh
+      - configs/train_ae_genomic_config.yaml
+      - train_vae.py
+    desc: "Run VAE hyperparameter sweep on LINCS data"
+
+  # Analyze Hyperparameter Results
+  analyze_hp_results:
+    cmd: >
+      python analyze_hp_results.py --log_dir vae_logs_lincs_conditional --metric final_validation_total_loss
+    deps:
+      - analyze_hp_results.py
+      - vae_logs_lincs_conditional/
+    desc: "Analyze hyperparameter tuning results for LINCS data" 
+
+  # Train AE on LINCS data
+  train_ae_for_lincs:
+    cmd: >
+      sbatch scripts/train_vae_triton.sh
+      configs/train_ae_genomic_conditional_config.yaml
+      mocop
+    deps:
+      - scripts/train_vae_triton.sh
+      - configs/train_ae_genomic_conditional_config.yaml
+      - train_vae.py
+    desc: "Train Autoencoder on LINCS data"
+
+  # Multi-Modal Contrastive Learning Stages
+  # Train multimodal model without pretrained encoders (baseline)
+  train_jump_mocop_lincs_baseline:
+    cmd: >
+      sbatch scripts/train_jump_mocop_LINCS_baseline_triton.sh
+      /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Vanilla_Clip_without_VAE
+      JUMP_LINCS_Vanilla_Clip_without_VAE.yml
+      mocop
+    deps:
+      - scripts/train_jump_mocop_LINCS_baseline_triton.sh
+      - configs/JUMP_LINCS_Vanilla_Clip_without_VAE.yml
+      - bin/train.py
+      - mocop/
+    desc: "Train multimodal model without pretrained encoders (baseline)"
+
+  # Train multimodal model with pretrained encoders
+  train_jump_mocop_lincs_pretrained:
+    cmd: >
+      sbatch scripts/train_jump_mocop_LINCS_pretrained_triton.sh
+      /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Vanilla_Clip_pretrained_VAE
+      jump_mocop_LINCS_with_pretrained.yml
+      mocop
+    deps:
+      - scripts/train_jump_mocop_LINCS_pretrained_triton.sh
+      - configs/jump_mocop_LINCS_with_pretrained.yml
+      - bin/train.py
+      - mocop/
+    desc: "Train multimodal model with pretrained AE encoders"
+
+    # Train multimodal model with pretrained encoders (dummy data)
+  train_jump_mocop_lincs_pretrained_dummy:
+    cmd: >
+      sbatch scripts/train_jump_mocop_LINCS_pretrained_triton.sh
+      /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Vanilla_Clip_pretrained_VAE_dummy
+      jump_mocop_LINCS_with_pretrained_dummy.yml
+      mocop
+    deps:
+      - scripts/train_jump_mocop_LINCS_pretrained_triton.sh
+      - configs/jump_mocop_LINCS_with_pretrained_dummy.yml
+      - bin/train.py
+      - mocop/
+    desc: "Train multimodal model with pretrained AE encoders (dummy data)"
+
+  # Train multimodal model with multiple GPUs (dummy data)
+  train_jump_mocop_lincs_pretrained_multi_gpu:
+    cmd: >
+      sbatch scripts/train_jump_mocop_LINCS_pretrained_triton_multi_gpu.sh
+      /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Vanilla_Clip_pretrained_VAE
+      jump_mocop_LINCS_with_pretrained_dummy.yml
+      mocop
+    deps:
+      - scripts/train_jump_mocop_LINCS_pretrained_triton_multi_gpu.sh
+      - configs/jump_mocop_LINCS_with_pretrained_dummy.yml
+      - bin/train.py
+      - mocop/
+    desc: "Train multimodal model with multiple GPUs (dummy data)"
+
+  # Train with frozen pretrained encoders (feature extraction)
+  train_jump_mocop_lincs_frozen:
+    cmd: >
+      sbatch exp/train_jump_mocop_LINCS_frozen_triton.sh
+      /scratch/cs/pml/AI_drug/trained_model_pred/mocop_LINCS_frozen
+    deps:
+      - exp/train_jump_mocop_LINCS_frozen_triton.sh
+      - configs/jump_mocop_LINCS_frozen_encoders.yml
+      - bin/train.py
+      - mocop/
+      - vae_logs_jump_cp/jump_ae_best/checkpoints/best-epoch=2094-val_total_loss=0.103.ckpt
+      - vae_logs_lincs/genomic_ae_best/checkpoints/best-epoch=7907-val_total_loss=0.501.ckpt
+    outs:
+      - /scratch/cs/pml/AI_drug/trained_model_pred/mocop_LINCS_frozen/
+    desc: "Train multimodal model with frozen pretrained encoders"
+
+  # Train multimodal model with Soft Hard Clip pretrained encoders
+  train_jump_mocop_lincs_soft_Clip_pretrained:
+    cmd: >
+      sbatch scripts/train_jump_mocop_LINCS_soft_Clip_pretrained_triton.sh
+      /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Soft_Hard_Clip_pretrained_VAE
+      jump_mocop_LINCS_soft_Clip_with_pretrained.yml
+      mocop
+    deps:
+      - scripts/train_jump_mocop_LINCS_soft_Clip_pretrained_triton.sh
+      - configs/jump_mocop_LINCS_soft_Clip_with_pretrained.yml
+      - bin/train.py
+      - mocop/
+    desc: "Train multimodal model with Soft Hard Clip pretrained AE encoders"
+
+  # Train multimodal model with Student Teacher with pretrained AE encoders
+  train_jump_mocop_lincs_memomenum_encoders_pretrained:
+    cmd: >
+      sbatch scripts/train_jump_mocop_LINCS_momentum_pretrained_triton.sh
+      /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Momentum_Clip_pretrained_VAE
+      jump_mocop_LINCS_student_teacher_pretrained.yml
+      mocop
+    deps:
+      - scripts/train_jump_mocop_LINCS_momentum_pretrained_triton.sh
+      - configs/jump_mocop_LINCS_student_teacher_pretrained.yml
+      - bin/train.py
+      - mocop/
+    desc: "Train multimodal model with Momentum encoders with pretrained AE encoders"
+
+  # Train multimodal model with Student Teacher with pretrained AE encoders
+  train_jump_mocop_lincs_student_teacher_pretrained:
+    cmd: >
+      sbatch scripts/train_jump_mocop_LINCS_student_teacher_pretrained_triton.sh
+      /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Momentum_Clip_pretrained_VAE
+      jump_mocop_LINCS_student_teacher_pretrained.yml
+      mocop
+    deps:
+      - scripts/train_jump_mocop_LINCS_student_teacher_pretrained_triton.sh
+      - configs/jump_mocop_LINCS_student_teacher_pretrained.yml
+      - bin/train.py
+      - mocop/
+    desc: "Train multimodal model with Student Teacher with pretrained AE encoders"
+
+  # Downstream Task Evaluation with CellLine MoCop
+  # ChEMBL20 Linear Evaluation
+  train_chembl20_cellline_mocop_linear:
+    cmd: >
+      sbatch exp/train_chembl20_cellline_mocop_linear_triton.sh
+      /scratch/work/masooda1/trained_model_pred/cellline_mocop
+      /path/to/cellline_mocop_checkpoint.ckpt
+      chembl20_cellline_mocop_linear.yml
+      mocop
+    deps:
+      - exp/train_chembl20_cellline_mocop_linear_triton.sh
+      - configs/chembl20_cellline_mocop_linear.yml
+      - bin/train.py
+      - bin/test.py
+      - bin/remap_state_dict.py
+      - mocop/
+    outs:
+      - /scratch/work/masooda1/trained_model_pred/cellline_mocop/chembl_20_pretrained_cellline_mocop_linear_prob/
+    desc: "ChEMBL20 linear evaluation with CellLine MoCop molecular encoder"
+
+  # DILI Finetuning Evaluation
+  finetune_MultiModal_on_DILI:
+    cmd: >
+      sbatch scripts/MultiModal_finetuning_DILI.sh
+      /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_finetuning
+      /scratch/work/masooda1/Multi_Modal_Contrastive/models/jump_mocop_seed_0_split_0/version_0/checkpoints/best_ckpt.ckpt
+      MultiModal_finetuning_DILI.yml
+      mocop
+    deps:
+      - scripts/MultiModal_finetuning_DILI.sh
+      - configs/MultiModal_finetuning_DILI.yml
+      - bin/train.py
+      - bin/test.py
+      - bin/remap_state_dict.py
+      - mocop/
+      - /scratch/work/masooda1/datasets/downstream_datasets/DILI/DILI_Goldstandard_1111.csv
+    desc: "DILI finetuning with CellLine MoCop molecular encoder"
+
+  # DILI Random Forest Analysis with Embeddings
+  rf_analysis_DILI:
+    cmd: >
+      sbatch scripts/run_rf_analysis.sh
+      RF_analysis_DILI.yaml
+      /scratch/work/masooda1/Multi_Modal_Contrastive/rf_results_with_Triencoder_average_precision
+      mocop
+    deps:
+      - scripts/run_rf_analysis.sh
+      - scripts/extract_embeddings_and_train_rf.py
+      - configs/RF_analysis_DILI.yaml
+      - mocop/
+      - /scratch/work/masooda1/datasets/downstream_datasets/DILI/test_data_ncv_DILIst_888.csv
+      - /scratch/work/masooda1/datasets/downstream_datasets/DILI/test_data_heldouttest_DILIst_223.csv
+    desc: "Extract embeddings from pretrained model and train Random Forest with nested CV for DILI prediction"
+
+  # DILI CV array: runs seed×fold×LR×WD jobs via SLURM array for all pretrained models
+  dili_cv_array_all_models:
+    cmd: >
+      bash scripts/run_dili_cv_array_all_models.sh
+      /scratch/work/masooda1/datasets/downstream_datasets/DILI/DILI_Gold_splits
+      Downstream_DILIGold_splits.yml
+      /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_array_runs
+      /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training
+    deps:
+      - scripts/run_dili_cv_array_all_models.sh
+      - scripts/run_dili_cv_array.sh
+      - configs/Downstream_DILIGold_splits.yml
+      - /scratch/work/masooda1/datasets/downstream_datasets/DILI/DILI_Goldstandard_1111.csv
+      - /scratch/work/masooda1/datasets/downstream_datasets/DILI/DILI_Gold_splits
+      - /scratch/work/masooda1/datasets/downstream_datasets/DILI/invalid_smiles.csv
+      - /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/
+    desc: "Run DILI training for all pretrained models, seeds, folds, and hyperparameters using precomputed split CSVs via SLURM array"
+
+  # Analyze DILI CV array results and find best hyperparameters
+  analyze_dili_cv_results:
+    cmd: >
+      python scripts/analyze_dili_array_results.py
+      --results_dir /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_array_runs/test_results
+      --out_dir /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_array_runs/analysis
+      --best_metric val/loss
+      --no_figures
+    deps:
+      - scripts/analyze_dili_array_results.py
+      - /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_array_runs/test_results
+
+  # Train with best hyperparameters on complete train sets and evaluate on heldout test sets
+  dili_best_hparams_training:
+    cmd: >
+      bash scripts/run_dili_best_hparams_array_all_models.sh
+      /scratch/work/masooda1/datasets/downstream_datasets/DILI/DILI_Gold_splits
+      Downstream_DILIGold_splits.yml
+      /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_best_hp_runs
+      /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_array_runs
+      /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_array_runs/analysis/best_hyperparameters_by_val_loss.csv
+    deps:
+      - scripts/run_dili_best_hparams_array_all_models.sh
+      - scripts/run_dili_best_hparams_array.sh
+      - configs/Downstream_DILIGold_splits.yml
+      - /scratch/work/masooda1/datasets/downstream_datasets/DILI/DILI_Goldstandard_1111.csv
+      - /scratch/work/masooda1/datasets/downstream_datasets/DILI/DILI_Gold_splits
+      - /scratch/work/masooda1/datasets/downstream_datasets/DILI/invalid_smiles.csv
+      - /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_array_runs/
+      - /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_array_runs/analysis/best_hyperparameters_by_val_loss.csv
+    desc: "Train models with best hyperparameters on complete train sets and evaluate on heldout test sets"
+
+  # Analyze best hyperparameters test results
+  analyze_dili_best_hp_results:
+    cmd: >
+      python scripts/analyze_dili_best_hp_results.py
+      --results_dir /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_best_hp_runs/best_hp_test_results
+      --out_dir /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_best_hp_runs/analysis
+    deps:
+      - scripts/analyze_dili_best_hp_results.py
+      - /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_best_hp_runs/best_hp_test_results/
+    outs:
+      - /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_best_hp_runs/analysis/combined_best_hp_results.csv
+      - /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_best_hp_runs/analysis/best_hp_results_mean_across_folds.csv
+      - /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_best_hp_runs/analysis/best_hp_results_std_across_folds.csv
+      - /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_best_hp_runs/analysis/best_hp_results_by_model.csv
+    desc: "Analyze best hyperparameters test results and create summary statistics"
+#  # Legacy commented stages
 #  train_jump_mocop:
 #    cmd: sbatch exp/train_jump_mocop_triton.sh
 #    deps:

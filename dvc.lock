@@ -44,14 +44,13 @@ stages:
       md5: 19df6f3032988e97032a3b1580ae1863
       size: 1890
   process_lincs_data:
-    cmd: sbatch data/process_LINCS_data.sh 
-      /scratch/work/masooda1/datasets/LINCS/ 
-      /scratch/work/masooda1/datasets/LINCS_preprocessed/ cmappy_env
+    cmd: "sbatch data/process_LINCS_data.sh /scratch/work/masooda1/datasets/LINCS/
+      /scratch/work/masooda1/datasets/LINCS_preprocessed/ cmappy_env\n"
     deps:
     - path: data/process_LINCS_data.py
       hash: md5
-      md5: d3f54d5ec353e063db8d5cfc97e22936
-      size: 31768
+      md5: ce3fbe7440fad5ced4739f14ad37c663
+      size: 31769
     - path: data/process_LINCS_data.sh
       hash: md5
       md5: 0aea62b05f36b9ac2c19118d6ab08601
@@ -78,16 +77,16 @@ stages:
     deps:
     - path: configs/train_ae_jump_cp_config.yaml
       hash: md5
-      md5: fb0348bfc70f13e268c7860143ba13d8
+      md5: 9df7a9e4636ae3fd7c9c50942b92a16e
       size: 2759
     - path: evaluate_vae.py
       hash: md5
-      md5: 6d41218bbc71fcaf4dc472f183cb766b
-      size: 26937
+      md5: 468815e7bc66e207bf1efa5dc9ec8681
+      size: 27231
     - path: scripts/evaluate_vae_triton.sh
       hash: md5
-      md5: 331649cf7af0b029609364675fb03357
-      size: 1471
+      md5: ab0a620716016efc1c12812ca0253df5
+      size: 1472
     - path: vae_logs_jump_cp/jump_ae_best/checkpoints/last.ckpt
       hash: md5
       md5: aa3d7046584692b0a9d8da98ffd3b7ed
@@ -112,3 +111,472 @@ stages:
       hash: md5
       md5: 90e8210dfea77b17995eed0a504c783b
       size: 1142
+  create_lincs_splits:
+    cmd: "sbatch data/create_lincs_splits.sh /scratch/work/masooda1/datasets/LINCS_preprocessed/landmark_cmp_data_min1000compounds_all_measurements.parquet
+      /scratch/work/masooda1/datasets/jump_preprocessed/jump_data_splits /scratch/work/masooda1/datasets/LINCS_preprocessed/LINCS_splits
+      mocop\n"
+    deps:
+    - path: data/LINCS_splitting_all_cell_lines.py
+      hash: md5
+      md5: b5a00a433e7ac17ddc8a42585484b89c
+      size: 8293
+    - path: data/create_lincs_splits.sh
+      hash: md5
+      md5: a443eb5cd3a88e4d3f4ebbba3a4a9252
+      size: 2666
+  analyze_hp_results:
+    cmd: "python analyze_hp_results.py --log_dir vae_logs_lincs_conditional --metric
+      final_validation_total_loss\n"
+    deps:
+    - path: analyze_hp_results.py
+      hash: md5
+      md5: 010e9bbd236cceedab26df0c56a7b55a
+      size: 9175
+    - path: vae_logs_lincs_conditional/
+      hash: md5
+      md5: 9cb9c6fad80d106124f5840ccda24cd2.dir
+      size: 2568514496
+      nfiles: 651
+  vae_sweep_lincs:
+    cmd: "sbatch scripts/vae_sweep_LINCS.sh\n"
+    deps:
+    - path: configs/train_ae_genomic_config.yaml
+      hash: md5
+      md5: e49618c71e495276607e9f2b9a9adea4
+      size: 2783
+    - path: scripts/vae_sweep_LINCS.sh
+      hash: md5
+      md5: d751d3134019f9c74ffe766f5f8f8e47
+      size: 5828
+    - path: train_vae.py
+      hash: md5
+      md5: 53c49d47b33b195f9b7f38ccff223f60
+      size: 34197
+  train_ae_for_lincs:
+    cmd: "sbatch scripts/train_vae_triton.sh configs/train_ae_genomic_conditional_config.yaml
+      mocop\n"
+    deps:
+    - path: configs/train_ae_genomic_conditional_config.yaml
+      hash: md5
+      md5: d8044f95034ff3aedd1da8d530fdeead
+      size: 2954
+    - path: scripts/train_vae_triton.sh
+      hash: md5
+      md5: ad5060a55fc0523692d39a656f74a6c6
+      size: 1426
+    - path: train_vae.py
+      hash: md5
+      md5: ba45ee9e856928e9fa8ae421b60c40d7
+      size: 45644
+  train_jump_mocop_lincs_baseline:
+    cmd: "sbatch scripts/train_jump_mocop_LINCS_baseline_triton.sh /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Vanilla_Clip_without_VAE
+      JUMP_LINCS_Vanilla_Clip_without_VAE.yml mocop\n"
+    deps:
+    - path: bin/train.py
+      hash: md5
+      md5: 442b714d25bc979b0a8ca1166207d3dd
+      size: 601
+    - path: configs/JUMP_LINCS_Vanilla_Clip_without_VAE.yml
+      hash: md5
+      md5: 7e1215f389c0d8132b75f59a5ef56759
+      size: 4053
+    - path: mocop/
+      hash: md5
+      md5: 5e7abb5fd45dab314f530a6f8b5c0280.dir
+      size: 3990811
+      nfiles: 34
+    - path: scripts/train_jump_mocop_LINCS_baseline_triton.sh
+      hash: md5
+      md5: a6b3f01eab4dd071c6eca1949d05a5fd
+      size: 2350
+  train_jump_mocop_lincs_pretrained:
+    cmd: "sbatch scripts/train_jump_mocop_LINCS_pretrained_triton.sh /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Vanilla_Clip_pretrained_VAE
+      jump_mocop_LINCS_with_pretrained.yml mocop\n"
+    deps:
+    - path: bin/train.py
+      hash: md5
+      md5: 442b714d25bc979b0a8ca1166207d3dd
+      size: 601
+    - path: configs/jump_mocop_LINCS_with_pretrained.yml
+      hash: md5
+      md5: e8a061cbe3edf0431fedb45865f6cd66
+      size: 4052
+    - path: mocop/
+      hash: md5
+      md5: 5e7abb5fd45dab314f530a6f8b5c0280.dir
+      size: 3990811
+      nfiles: 34
+    - path: scripts/train_jump_mocop_LINCS_pretrained_triton.sh
+      hash: md5
+      md5: 756b6078790cf8cd3cea9362d766d0d6
+      size: 2375
+  finetune_MultiModal_on_DILI:
+    cmd: "sbatch scripts/MultiModal_finetuning_DILI.sh /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_finetuning
+      /scratch/work/masooda1/Multi_Modal_Contrastive/models/jump_mocop_seed_0_split_0/version_0/checkpoints/best_ckpt.ckpt
+      MultiModal_finetuning_DILI.yml mocop\n"
+    deps:
+    - path: 
+        /scratch/work/masooda1/datasets/downstream_datasets/DILI/DILI_Goldstandard_1111.csv
+      hash: md5
+      md5: efb473a99104e065472ae93251b2d0c6
+      size: 195950
+    - path: bin/remap_state_dict.py
+      hash: md5
+      md5: 875d1914df37a9b9ce219e0fa2ec5b00
+      size: 1048
+    - path: bin/test.py
+      hash: md5
+      md5: bbaba4623e9a29c6e3969a102c095614
+      size: 554
+    - path: bin/train.py
+      hash: md5
+      md5: 442b714d25bc979b0a8ca1166207d3dd
+      size: 601
+    - path: configs/MultiModal_finetuning_DILI.yml
+      hash: md5
+      md5: 778f607f0c6a12002bfe0b43bd7e44f8
+      size: 2442
+    - path: mocop/
+      hash: md5
+      md5: 643ace154cae274bce10b6dae3226d2e.dir
+      size: 4001451
+      nfiles: 34
+    - path: scripts/MultiModal_finetuning_DILI.sh
+      hash: md5
+      md5: c2070cc18b1daa21cd867b352c38a59b
+      size: 6767
+  rf_analysis_DILI:
+    cmd: "sbatch scripts/run_rf_analysis.sh RF_analysis_DILI.yaml /scratch/work/masooda1/Multi_Modal_Contrastive/rf_results_with_Triencoder_average_precision
+      mocop\n"
+    deps:
+    - path: 
+        /scratch/work/masooda1/datasets/downstream_datasets/DILI/test_data_heldouttest_DILIst_223.csv
+      hash: md5
+      md5: 0c2cf27acbbe1552047bf3251620d433
+      size: 3767397
+    - path: 
+        /scratch/work/masooda1/datasets/downstream_datasets/DILI/test_data_ncv_DILIst_888.csv
+      hash: md5
+      md5: d51c65c04f3a71f17408374e00c7280d
+      size: 15041360
+    - path: configs/RF_analysis_DILI.yaml
+      hash: md5
+      md5: f96943a4e2d19d7cb9a3c3fa20ec44c9
+      size: 2364
+    - path: mocop/
+      hash: md5
+      md5: 643ace154cae274bce10b6dae3226d2e.dir
+      size: 4001451
+      nfiles: 34
+    - path: scripts/extract_embeddings_and_train_rf.py
+      hash: md5
+      md5: fdf30212d7c9dacf532146f8f66c0ce1
+      size: 19813
+    - path: scripts/run_rf_analysis.sh
+      hash: md5
+      md5: df177a0fc1b8eea33d6283adbcacc54c
+      size: 2515
+  train_jump_mocop_lincs_soft_Clip_pretrained:
+    cmd: "sbatch scripts/train_jump_mocop_LINCS_soft_Clip_pretrained_triton.sh /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Soft_Hard_Clip_pretrained_VAE
+      jump_mocop_LINCS_soft_Clip_with_pretrained.yml mocop\n"
+    deps:
+    - path: bin/train.py
+      hash: md5
+      md5: 442b714d25bc979b0a8ca1166207d3dd
+      size: 601
+    - path: configs/jump_mocop_LINCS_soft_Clip_with_pretrained.yml
+      hash: md5
+      md5: ef065c431826c8ce53a7b0e9c12cee0a
+      size: 4172
+    - path: mocop/
+      hash: md5
+      md5: 75e7f0a2b1b556550b8ae808cece24bc.dir
+      size: 4045858
+      nfiles: 36
+    - path: scripts/train_jump_mocop_LINCS_soft_Clip_pretrained_triton.sh
+      hash: md5
+      md5: 88796ce42a3cb4dd451441e44dca35f4
+      size: 2398
+  train_jump_mocop_lincs_pretrained_dummy:
+    cmd: "sbatch scripts/train_jump_mocop_LINCS_pretrained_triton.sh /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Vanilla_Clip_pretrained_VAE_dummy
+      jump_mocop_LINCS_with_pretrained_dummy.yml mocop\n"
+    deps:
+    - path: bin/train.py
+      hash: md5
+      md5: 442b714d25bc979b0a8ca1166207d3dd
+      size: 601
+    - path: configs/jump_mocop_LINCS_with_pretrained_dummy.yml
+      hash: md5
+      md5: f9cde54ee19a0dda8f0802295946f9f2
+      size: 4049
+    - path: mocop/
+      hash: md5
+      md5: 86e8bcb5b58e2e1397dd97e3ee38ccd7.dir
+      size: 4045880
+      nfiles: 36
+    - path: scripts/train_jump_mocop_LINCS_pretrained_triton.sh
+      hash: md5
+      md5: 1e95d417cc4710f707953009327dac2a
+      size: 2378
+  train_jump_mocop_lincs_student_teacher_pretrained:
+    cmd: "sbatch scripts/train_jump_mocop_LINCS_student_teacher_pretrained_triton.sh
+      /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Momentum_Clip_pretrained_VAE
+      jump_mocop_LINCS_student_teacher_pretrained.yml mocop\n"
+    deps:
+    - path: bin/train.py
+      hash: md5
+      md5: 442b714d25bc979b0a8ca1166207d3dd
+      size: 601
+    - path: configs/jump_mocop_LINCS_student_teacher_pretrained.yml
+      hash: md5
+      md5: b3a23ee39f175068526827c2f89cd3fd
+      size: 5329
+    - path: mocop/
+      hash: md5
+      md5: cd16209e2b7b160171d98b64aa0e47db.dir
+      size: 4050523
+      nfiles: 36
+    - path: scripts/train_jump_mocop_LINCS_student_teacher_pretrained_triton.sh
+      hash: md5
+      md5: a42ebb9714b478ce84ebd77c75ca0b46
+      size: 4216
+  train_jump_mocop_lincs_memomenum_encoders_pretrained:
+    cmd: "sbatch scripts/train_jump_mocop_LINCS_momentum_pretrained_triton.sh /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Momentum_Clip_pretrained_VAE
+      jump_mocop_LINCS_student_teacher_pretrained.yml mocop\n"
+    deps:
+    - path: bin/train.py
+      hash: md5
+      md5: 442b714d25bc979b0a8ca1166207d3dd
+      size: 601
+    - path: configs/jump_mocop_LINCS_student_teacher_pretrained.yml
+      hash: md5
+      md5: 2f99e4898ace48b133e651490e8acb3f
+      size: 5375
+    - path: mocop/
+      hash: md5
+      md5: c1a7c60389e57ac7bc906f17fb423d05.dir
+      size: 4045948
+      nfiles: 36
+    - path: scripts/train_jump_mocop_LINCS_momentum_pretrained_triton.sh
+      hash: md5
+      md5: cb718a44bc11d67352d78d9181a2160a
+      size: 2498
+  train_jump_mocop_lincs_pretrained_dummy_multi_gpu:
+    cmd: "sbatch scripts/train_jump_mocop_LINCS_pretrained_triton_multi_gpu.sh /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Vanilla_Clip_pretrained_VAE_dummy
+      jump_mocop_LINCS_with_pretrained_dummy.yml mocop\n"
+    deps:
+    - path: bin/train.py
+      hash: md5
+      md5: 442b714d25bc979b0a8ca1166207d3dd
+      size: 601
+    - path: configs/jump_mocop_LINCS_with_pretrained_dummy.yml
+      hash: md5
+      md5: 56645cf4b8781b460899e4bd6db3d9a4
+      size: 4138
+    - path: mocop/
+      hash: md5
+      md5: 2abf15d85853c5fe75f1a7d8b4ea3bc2.dir
+      size: 3779535
+      nfiles: 37
+    - path: scripts/train_jump_mocop_LINCS_pretrained_triton_multi_gpu.sh
+      hash: md5
+      md5: 3e389973c3be72ff30b6f8a3c73db0f7
+      size: 2700
+  train_jump_mocop_lincs_pretrained_multi_gpu:
+    cmd: "sbatch scripts/train_jump_mocop_LINCS_pretrained_triton_multi_gpu.sh /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Vanilla_Clip_pretrained_VAE
+      jump_mocop_LINCS_with_pretrained_dummy.yml mocop\n"
+    deps:
+    - path: bin/train.py
+      hash: md5
+      md5: 442b714d25bc979b0a8ca1166207d3dd
+      size: 601
+    - path: configs/jump_mocop_LINCS_with_pretrained_dummy.yml
+      hash: md5
+      md5: eb38a9495cfdd9f3fbd43a5d33220805
+      size: 4294
+    - path: mocop/
+      hash: md5
+      md5: e931f99757bf6e7b740ce2cd04feb619.dir
+      size: 3870866
+      nfiles: 45
+    - path: scripts/train_jump_mocop_LINCS_pretrained_triton_multi_gpu.sh
+      hash: md5
+      md5: a6ac9c8fba52166b950ac7667b3f616a
+      size: 2747
+  check_invalid_smiles:
+    cmd: "sbatch data/check_invalid_smiles.sh /scratch/work/masooda1/datasets/jump_preprocessed/jump_data_splits/cell_fetures_with_smiles.parquet
+      /scratch/work/masooda1/datasets/LINCS_preprocessed/landmark_cmp_data_min1000compounds_all_measurements.parquet
+      /scratch/work/masooda1/datasets/failed_SMILES/failed_molecules_report.csv mocop\n"
+    deps:
+    - path: check_invalid_smiles.py
+      hash: md5
+      md5: 7e942f2e9775883d93e5ea81e3d250a8
+      size: 6039
+    - path: data/check_invalid_smiles.sh
+      hash: md5
+      md5: 36cb470c4d3aeb8ee847479b85b4cf78
+      size: 1601
+      isexec: true
+    - path: mocop/featurizer/smiles_transformation.py
+      hash: md5
+      md5: 912b62f1ca3d14681cee0cc5bed0230f
+      size: 1544
+  dili_cv_array:
+    cmd: "sbatch scripts/run_dili_cv_array.sh /scratch/work/masooda1/datasets/downstream_datasets/DILI/DILI_Gold_splits
+      Downstream_DILIGold_splits.yml /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_array_runs
+      /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Vanilla_Clip_with_VAE/Vanilla_Clip_seed_0_split_0_LR_0.001_batch_256_N_GPUS_4_WORKERS_4/checkpoints/last.ckpt\n"
+    deps:
+    - path: 
+        /scratch/work/masooda1/datasets/downstream_datasets/DILI/DILI_Gold_splits
+      hash: md5
+      md5: 8bb987bf8c165f67e0be894b906717de.dir
+      size: 4256213
+      nfiles: 101
+    - path: 
+        /scratch/work/masooda1/datasets/downstream_datasets/DILI/DILI_Goldstandard_1111.csv
+      hash: md5
+      md5: efb473a99104e065472ae93251b2d0c6
+      size: 195950
+    - path: 
+        /scratch/work/masooda1/datasets/downstream_datasets/DILI/invalid_smiles.csv
+      hash: md5
+      md5: 06e27731c083dae0cb53cea8372079f5
+      size: 1431
+    - path: configs/Downstream_DILIGold_splits.yml
+      hash: md5
+      md5: 66db10a25a4e2447c5505ae68006ff9c
+      size: 2893
+    - path: scripts/run_dili_cv_array.sh
+      hash: md5
+      md5: c7f05cd04bf135dc72f23804d42236fb
+      size: 10212
+  dili_cv_array_all_models:
+    cmd: "bash scripts/run_dili_cv_array_all_models.sh /scratch/work/masooda1/datasets/downstream_datasets/DILI/DILI_Gold_splits
+      Downstream_DILIGold_splits.yml /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_array_runs
+      /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training\n"
+    deps:
+    - path: 
+        /scratch/work/masooda1/datasets/downstream_datasets/DILI/DILI_Gold_splits
+      hash: md5
+      md5: 8bb987bf8c165f67e0be894b906717de.dir
+      size: 4256213
+      nfiles: 101
+    - path: 
+        /scratch/work/masooda1/datasets/downstream_datasets/DILI/DILI_Goldstandard_1111.csv
+      hash: md5
+      md5: efb473a99104e065472ae93251b2d0c6
+      size: 195950
+    - path: 
+        /scratch/work/masooda1/datasets/downstream_datasets/DILI/invalid_smiles.csv
+      hash: md5
+      md5: 06e27731c083dae0cb53cea8372079f5
+      size: 1431
+    - path: configs/Downstream_DILIGold_splits.yml
+      hash: md5
+      md5: 113a8eddee94e3cbedc2ce5c09a90c66
+      size: 2898
+    - path: contrastive_training
+      hash: md5
+      md5: 5f291a67b45ddb632097cad051d42e71.dir
+      size: 8655622382
+      nfiles: 89
+    - path: scripts/run_dili_cv_array.sh
+      hash: md5
+      md5: d9e31035f87161cc5d5942bf96c05763
+      size: 14282
+    - path: scripts/run_dili_cv_array_all_models.sh
+      hash: md5
+      md5: 4d21d245e095ba1678ee9d4fb311b88a
+      size: 3465
+  analyze_dili_cv_results:
+    cmd: "python scripts/analyze_dili_array_results.py --results_dir /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_array_runs/test_results
+      --out_dir /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_array_runs/analysis
+      --best_metric val/loss --no_figures\n"
+    deps:
+    - path: downstream/DILI_Gold_array_runs/test_results
+      hash: md5
+      md5: 647e7fb070bebb8305b100c448648450.dir
+      size: 6310515
+      nfiles: 9000
+    - path: scripts/analyze_dili_array_results.py
+      hash: md5
+      md5: 31fc9d543d22b9b39711d0f7ae58e862
+      size: 14778
+  dili_best_hparams_training:
+    cmd: "bash scripts/run_dili_best_hparams_array_all_models.sh /scratch/work/masooda1/datasets/downstream_datasets/DILI/DILI_Gold_splits
+      Downstream_DILIGold_splits.yml /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_best_hp_runs
+      /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_array_runs
+      /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_array_runs/analysis/best_hyperparameters_by_val_loss.csv\n"
+    deps:
+    - path: 
+        /scratch/work/masooda1/datasets/downstream_datasets/DILI/DILI_Gold_splits
+      hash: md5
+      md5: 8bb987bf8c165f67e0be894b906717de.dir
+      size: 4256213
+      nfiles: 101
+    - path: 
+        /scratch/work/masooda1/datasets/downstream_datasets/DILI/DILI_Goldstandard_1111.csv
+      hash: md5
+      md5: efb473a99104e065472ae93251b2d0c6
+      size: 195950
+    - path: 
+        /scratch/work/masooda1/datasets/downstream_datasets/DILI/invalid_smiles.csv
+      hash: md5
+      md5: 06e27731c083dae0cb53cea8372079f5
+      size: 1431
+    - path: configs/Downstream_DILIGold_splits.yml
+      hash: md5
+      md5: 115c7fe6ff6920e38937af9d50234163
+      size: 2917
+    - path: downstream/DILI_Gold_array_runs
+      hash: md5
+      md5: bb79309847acee2580ed11c08e590af5.dir
+      size: 2909299571
+      nfiles: 9020
+    - path: 
+        downstream/DILI_Gold_array_runs/analysis/best_hyperparameters_by_val_loss.csv
+      hash: md5
+      md5: 81a2858d8de455af0a2b913e4d8fac13
+      size: 156438
+    - path: scripts/run_dili_best_hparams_array.sh
+      hash: md5
+      md5: bfc6e59248c975fc05a399a1fbd0bb25
+      size: 12457
+    - path: scripts/run_dili_best_hparams_array_all_models.sh
+      hash: md5
+      md5: a70fd232ee9ea0c51dd330c9cc7731be
+      size: 2534
+  analyze_dili_best_hp_results:
+    cmd: "python scripts/analyze_dili_best_hp_results.py --results_dir /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_best_hp_runs/best_hp_test_results
+      --out_dir /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_best_hp_runs/analysis\n"
+    deps:
+    - path: downstream/DILI_Gold_best_hp_runs/best_hp_test_results
+      hash: md5
+      md5: aa6781413c75610c492b5e26567ddad0.dir
+      size: 337294
+      nfiles: 450
+    - path: scripts/analyze_dili_best_hp_results.py
+      hash: md5
+      md5: 05314a68ad140c65fdaf4ad3de46f7f3
+      size: 10271
+    outs:
+    - path: 
+        downstream/DILI_Gold_best_hp_runs/analysis/best_hp_results_by_model.csv
+      hash: md5
+      md5: 4704fcf575fd5b334fdcbdfd91f8a80c
+      size: 2934
+    - path: 
+        downstream/DILI_Gold_best_hp_runs/analysis/best_hp_results_mean_across_folds.csv
+      hash: md5
+      md5: afc202b26401d6d2e78f9a46703c7b8e
+      size: 20196
+    - path: 
+        downstream/DILI_Gold_best_hp_runs/analysis/best_hp_results_std_across_folds.csv
+      hash: md5
+      md5: d08426e0ad8884bb7417b286ef4d3255
+      size: 21172
+    - path: 
+        downstream/DILI_Gold_best_hp_runs/analysis/combined_best_hp_results.csv
+      hash: md5
+      md5: fcdded92186d50d4398780b7a0894f84
+      size: 153993

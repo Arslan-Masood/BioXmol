@@ -505,11 +505,6 @@ def plot_measurement_distributions(siginfo_merged: pd.DataFrame, data_dir: str) 
     dose_counts = siginfo_merged['pert_dose'].value_counts().sort_index()
     time_counts = siginfo_merged['pert_time'].value_counts().sort_index()
     
-    logger.info("\nNumber of measurements at each dose:")
-    logger.info(dose_counts.to_string())
-    
-    logger.info("\nNumber of measurements at each time point:")
-    logger.info(time_counts.to_string())
 
 def filter_measurements(siginfo_merged: pd.DataFrame, dose_min: float, dose_max: float, time_points: list) -> pd.DataFrame:
     """
@@ -617,7 +612,7 @@ def process_LINCS_data(data_dir: str,
             siginfo_merged = convert_to_bins(siginfo_merged, 'pert_dose')
         if test_mode:
             logger.info("TEST MODE: Using only first batch of compounds")
-            siginfo_merged = siginfo_merged.head(1000)
+            siginfo_merged = siginfo_merged.head(50000)
         
         landmark_gene_ids = get_landmark_genes(gene_info)
         complete_data = process_expression_data(data_dir, siginfo_merged, landmark_gene_ids)

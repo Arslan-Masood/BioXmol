@@ -3,6 +3,7 @@
 
 # Data parameters
 data:
+  modality: "jump_cp"  # Specify Cell Painting modality
   data_path: "/scratch/work/masooda1/Multi_Modal_Contrastive/data/dummy_data/cell_fetures_with_smiles_2000.parquet"
   train_split: "/scratch/work/masooda1/Multi_Modal_Contrastive/data/dummy_data/jump-compound-split-0-train.csv"
   val_split: "/scratch/work/masooda1/Multi_Modal_Contrastive/data/dummy_data/jump-compound-split-0-val.csv"

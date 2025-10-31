@@ -1,0 +1,87 @@
+seed: 0
+dataloaders:
+  _target_: training.build_dataloaders
+  dataset:
+    _target_: dataset.SupervisedGraphDataset
+    data_path: data/chembl20/chembl20.csv
+    cmpd_col: smiles
+    cmpd_col_is_inchikey: false
+    pad_length: 500
+  splits:
+    train: data/chembl20/chembl20-frac5-split1-train.csv
+    val: data/chembl20/chembl20-split1-val.csv
+    test: data/chembl20/chembl20-split1-test.csv
+  batch_size: 128
+  num_workers: 4
+  pin_memory: true
+
+model:
+  _target_: model.LightningGGNN.load_from_checkpoint
+  _args_:
+  - # Path to extracted molecular encoder checkpoint (will be set via command line)
+  strict: false
+  n_edge: 1
+  in_dim: 75
+  n_conv: 6
+  fc_dims:
+  - 1024
+  - 1310  # ChEMBL20 has 1310 targets
+  p_dropout: 0.1
+  freeze: true  # For linear evaluation, freeze the pretrained weights
+
+optimizer:
+  _target_: torch.optim.Adam
+  lr: 5.0e-05
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  mode: max
+  factor: 0.5
+  patience: 10
+  min_lr: 1.0e-08
+
+scheduler_config:
+  monitor: val/auprc_mean
+  frequency: 1
+  interval: epoch
+
+trainer:
+  _target_: pytorch_lightning.Trainer
+  gpus: 1
+  num_nodes: 1
+  precision: 32
+  max_epochs: 1000
+  min_epochs: 50
+  fast_dev_run: false
+  check_val_every_n_epoch: 1
+  callbacks:
+  - _target_: pytorch_lightning.callbacks.early_stopping.EarlyStopping
+    monitor: val/auprc_mean
+    mode: max
+    patience: 20
+    verbose: true
+  - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+    monitor: val/auprc_mean
+    mode: max
+    save_top_k: 2
+    dirpath: # Will be set via command line
+    filename: "best-epoch={epoch}-val_auprc={val/auprc_mean:.3f}"
+    save_last: true
+  logger:
+    _target_: pytorch_lightning.loggers.NeptuneLogger
+    project: # Will be set via command line
+    name: # Will be set via command line
+    api_key: # Will be set via command line
+    log_model_checkpoints: false
+
+test_model:
+  _target_: model.LightningGGNN.load_from_checkpoint
+  checkpoint_path: # Will be set via command line
+  n_edge: ${model.n_edge}
+  in_dim: ${model.in_dim}
+  n_conv: ${model.n_conv}
+  fc_dims: ${model.fc_dims}
+  p_dropout: ${model.p_dropout}
+
+test_results_dir: # This will be overridden by the command line argument
+test_results_filename: # This will be overridden by the command line argument

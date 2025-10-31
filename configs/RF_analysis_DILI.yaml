@@ -1,0 +1,81 @@
+# Configuration for Random Forest Analysis with DILI embeddings
+# This config follows the same pattern as MultiModal_finetuning_DILI.yml
+
+# Data configuration
+data:
+  train_data_path: /scratch/work/masooda1/datasets/downstream_datasets/DILI/test_data_ncv_DILIst_888.csv
+  test_data_path: /scratch/work/masooda1/datasets/downstream_datasets/DILI/test_data_heldouttest_DILIst_223.csv
+  smiles_col: 
+  label_col: 
+
+# Model configuration for embedding extraction
+model:
+  _target_: model.LightningGGNN.load_from_checkpoint
+  _args_:
+  - /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_finetuning/extracted_molecular_encoders/molecular_encoder_test.ckpt
+  strict: false
+  n_edge: 1
+  in_dim: 75
+  n_conv: 6
+  fc_dims:
+  - 1024
+  - 128
+  - 1
+  p_dropout: 0.1
+  freeze: false
+
+# Layer to extract embeddings from
+layer:   # Options: GNN, first_fc, second_fc
+batch_size: 
+
+# Random Forest configuration
+random_forest:
+  # Cross-validation parameters
+  outer_cv_splits: 5
+  inner_cv_splits: 4
+  random_states: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52]
+  
+  # Hyperparameter search space
+  param_distributions:
+    max_depth: [5, 20]  # randint range
+    max_features: [30, 50]  # randint range
+    min_samples_leaf: [5, 15]  # randint range
+    min_samples_split: [5, 15]  # randint range
+    n_estimators: [200, 300, 400, 500, 600]
+    bootstrap: [true, false]
+    oob_score: [false]
+    random_state: [42]
+    criterion: [gini, entropy]
+    n_jobs: [40]  # Will be overridden by command line
+    class_weight: [null, balanced_subsample, balanced]
+  
+  # Halving search parameters
+  halving_search:
+    factor: 2
+    n_jobs: 40  # Will be overridden by command line
+    verbose: 0
+    scoring: "average_precision"  # https://scikit-learn.org/stable/api/sklearn.metrics.html
+  
+  # Best model selection metric
+  best_model_metric: "average_precision"  # Options: matthews_corrcoef, auc, balanced_accuracy, f1_score, sensitivity, specificity, precision, average_precision
+
+# Output configuration
+output:
+  output_dir: # Will be set via command line
+  save_embeddings: true
+  save_model: true
+  save_plots: true
+
+# Evaluation configuration
+evaluation:
+  threshold_balancing: true
+  metrics:
+    - balanced_accuracy
+    - matthews_corrcoef
+    - auc
+    - f1_score
+    - sensitivity
+    - specificity
+    - positive_lr
+    - precision
+    - average_precision

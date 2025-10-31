@@ -492,6 +492,207 @@ class GenomicDataset(Dataset):
         return torch.from_numpy(features)
 
 
+class ConditionalGenomicDataset(Dataset):
+    """Dataset class for conditional genomic (LINCS L1000) data with cell line, dose, and time embeddings."""
+    
+    def __init__(self, config: Config):
+        """Initialize conditional genomic dataset from config."""
+        data_config = config.data
+        
+        # Use genomic_data_path if specified, otherwise fallback to data_path
+        self.data_path = data_config.get('genomic_data_path', data_config['data_path'])
+        self.normalize = data_config['normalize']
+        self.random_seed = config.training['seed']
+        
+        # Molecule filtering (exclude controls/specific molecules)
+        self.exclude_molecules = data_config.get('exclude_molecules', [])
+        self.molecule_id_column = data_config.get('molecule_id_column', 'Metadata_InChIKey')
+        
+        # Cell line filtering options
+        self.target_cell_line = data_config.get('target_cell_line', None)  # Filter to specific cell line
+        self.cell_line_col = "Metadata_cell_iname"
+        
+        # Load and process data
+        self._load_data()
+        
+        # Set up for molecule-wise sampling
+        self.smiles_col = "Metadata_SMILES"
+        if self.smiles_col in self.df.columns:
+            self.unique_smiles = self.df[self.smiles_col].dropna().unique().tolist()
+        else:
+            raise ValueError("SMILES column not found in the genomic dataset")
+        
+        # Set up conditional embeddings (similar to CellLineTripleInputEncoder)
+        self._setup_conditional_mappings()
+        
+        # Pre-compute molecule indices for faster sampling
+        self._precompute_indices()
+        
+        print(f"Conditional genomic dataset created with {len(self.unique_smiles)} unique molecules")
+        if self.target_cell_line:
+            print(f"Filtered to cell line: {self.target_cell_line}")
+        print(f"Conditional embedding dimensions: cell={len(self.cell_line_to_idx)}, dose={len(self.dose_to_idx)}, time={len(self.time_to_idx)}")
+    
+    def _load_data(self):
+        """Load and preprocess the conditional genomic data."""
+        print(f"Loading conditional genomic data from {self.data_path}")
+        
+        # Load data (genomic data is typically in parquet format)
+        if self.data_path.endswith('.parquet'):
+            self.df = pd.read_parquet(self.data_path)
+        elif self.data_path.endswith('.csv'):
+            self.df = pd.read_csv(self.data_path)
+        else:
+            raise ValueError("Genomic data file must be .parquet or .csv")
+        
+        print(f"Loaded conditional genomic dataframe with shape: {self.df.shape}")
+        
+        # Filter to specific cell line if specified
+        if self.target_cell_line:
+            if self.cell_line_col in self.df.columns:
+                original_shape = self.df.shape[0]
+                self.df = self.df[self.df[self.cell_line_col] == self.target_cell_line].reset_index(drop=True)
+                print(f"Filtered to {self.target_cell_line}: {original_shape} → {self.df.shape[0]} rows")
+            else:
+                print(f"Warning: Cell line column '{self.cell_line_col}' not found, skipping cell line filtering")
+        
+        # Filter out excluded molecules if specified
+        if self.exclude_molecules:
+            self._filter_molecules()
+        
+        # Get feature columns (non-metadata) - genomic features
+        self.feature_cols = [c for c in self.df.columns if 'Metadata' not in c]
+        
+        print(f"Genomic feature columns: {len(self.feature_cols)}")
+        self.feature_dim = len(self.feature_cols)
+        
+        # Extract features as numpy array for fast access
+        self.features_array = self.df[self.feature_cols].values.astype(np.float32)
+        
+        # Handle NaN values once during initialization
+        self.features_array = np.where(np.isnan(self.features_array), 0.0, self.features_array)
+        
+        # Store normalization parameters and pre-normalize if enabled
+        if self.normalize:
+            self.feature_mean = np.mean(self.features_array, axis=0, keepdims=True)
+            self.feature_std = np.std(self.features_array, axis=0, keepdims=True)
+            # Avoid division by zero
+            self.feature_std = np.where(self.feature_std == 0, 1.0, self.feature_std)
+            
+            # Pre-normalize all features for faster access
+            self.features_array = (self.features_array - self.feature_mean) / self.feature_std
+            print("Computed conditional genomic normalization statistics and pre-normalized all features")
+        else:
+            print("Conditional genomic features extracted as numpy array (no normalization)")
+    
+    def _filter_molecules(self):
+        """Filter out excluded molecules from the conditional genomic dataset."""
+        original_shape = self.df.shape
+        
+        # Check if the specified molecular ID column exists
+        if self.molecule_id_column not in self.df.columns:
+            available_cols = [col for col in self.df.columns if 'Metadata' in col]
+            raise ValueError(
+                f"Molecular ID column '{self.molecule_id_column}' not found in conditional genomic dataset. "
+                f"Available metadata columns: {available_cols}"
+            )
+        
+        before_count = len(self.df)
+        
+        # Filter out molecules in exclude list
+        excluded_mask = self.df[self.molecule_id_column].isin(self.exclude_molecules)
+        excluded_count = excluded_mask.sum()
+        
+        if excluded_count > 0:
+            self.df = self.df[~excluded_mask].reset_index(drop=True)
+            after_count = len(self.df)
+            
+            print(f"Filtered conditional genomic data using {self.molecule_id_column}:")
+            print(f"  - Excluded {excluded_count} rows containing {len(self.exclude_molecules)} control molecules")
+            print(f"  - Dataset size: {before_count} → {after_count} rows")
+        else:
+            print(f"No molecules found to exclude from conditional genomic data using {self.molecule_id_column}")
+        
+        if self.df.shape[0] < original_shape[0] * 0.5:
+            print(f"⚠️  WARNING: Filtering removed {((original_shape[0] - self.df.shape[0]) / original_shape[0] * 100):.1f}% of conditional genomic data")
+    
+    def _setup_conditional_mappings(self):
+        """Set up mappings for cell lines, doses, and time points."""
+        # Cell line mapping
+        unique_cell_lines = sorted(self.df[self.cell_line_col].unique())
+        self.cell_line_to_idx = {cell: idx + 1 for idx, cell in enumerate(unique_cell_lines)}  # Start from 1, 0 is padding
+        
+        # Dose mapping
+        unique_doses = sorted(self.df['Metadata_Dose_Level'].unique())
+        self.dose_to_idx = {dose: idx + 1 for idx, dose in enumerate(unique_doses)}  # Start from 1, 0 is padding
+        
+        # Time mapping
+        unique_times = sorted(self.df['Metadata_pert_time'].unique())
+        self.time_to_idx = {time: idx + 1 for idx, time in enumerate(unique_times)}  # Start from 1, 0 is padding
+        
+        print(f"Created conditional mappings:")
+        print(f"  - Cell lines: {len(unique_cell_lines)} -> indices 1-{len(unique_cell_lines)}")
+        print(f"  - Doses: {len(unique_doses)} -> indices 1-{len(unique_doses)}")
+        print(f"  - Times: {len(unique_times)} -> indices 1-{len(unique_times)}")
+    
+    def _precompute_indices(self):
+        """Pre-compute indices for each molecule to eliminate pandas operations in __getitem__."""
+        print("Pre-computing conditional genomic molecule indices...")
+        self.smiles_to_indices = {}
+        for smiles in self.unique_smiles:
+            indices = self.df[self.df[self.smiles_col] == smiles].index.tolist()
+            self.smiles_to_indices[smiles] = indices
+        
+        # Initialize a single random number generator
+        self.rng = np.random.default_rng(self.random_seed)
+        print(f"Pre-computed conditional genomic indices for {len(self.unique_smiles)} molecules")
+    
+    def __len__(self):
+        return len(self.unique_smiles)
+    
+    def __getitem__(self, index):
+        """Get a molecule-wise sample from conditional genomic data with embeddings."""
+        smiles = self.unique_smiles[index]
+        
+        # Get pre-computed row indices for this SMILES (no pandas filtering!)
+        row_indices = self.smiles_to_indices[smiles]
+        
+        # Use consistent approach for proper randomness with seed_everything()
+        random_state = self.rng.integers(0, 2**32-1)
+        temp_rng = np.random.default_rng(random_state)
+        selected_row_idx = temp_rng.choice(row_indices)
+        
+        # Get features directly from pre-processed numpy array (no pandas!)
+        genomic_features = self.features_array[selected_row_idx].copy()
+        
+        # Get conditional information from the selected row
+        row = self.df.iloc[selected_row_idx]
+        cell_line = row[self.cell_line_col]
+        dose = row['Metadata_Dose_Level']
+        time = row['Metadata_pert_time']
+        
+        # Convert to embedding indices
+        cell_idx = self.cell_line_to_idx[cell_line]
+        dose_idx = self.dose_to_idx[dose]
+        time_idx = self.time_to_idx[time]
+        
+        # Create conditional features tensor (we'll embed these in the model)
+        conditional_features = torch.tensor([cell_idx, dose_idx, time_idx], dtype=torch.long)
+        
+        return {
+            'genomic_features': torch.from_numpy(genomic_features),
+            'conditional_features': conditional_features
+        }
+    
+    def get_embedding_dims(self):
+        """Get the dimensions for embedding layers."""
+        return {
+            'n_cell_lines': len(self.cell_line_to_idx),
+            'n_dose_levels': len(self.dose_to_idx),
+            'n_time_points': len(self.time_to_idx)
+        }
+
+
 class JUMPDataModule(pl.LightningDataModule):
     """Data module for JUMP Cell Painting dataset using build_dataloaders with predefined splits."""
     
@@ -570,6 +771,10 @@ class GenomicDataModule(pl.LightningDataModule):
         self.feature_dim = None
         self.dataloaders = None
         self.dataset = None
+        
+        # Check if conditional mode is enabled
+        self.conditional_mode = config.model.get('conditional_mode', False)
+        self.embedding_dims = None
     
     def prepare_data(self):
         """Download or prepare genomic data if needed."""
@@ -594,8 +799,14 @@ class GenomicDataModule(pl.LightningDataModule):
             
         print("Setting up genomic data module...")
         
-        # Create genomic dataset
-        self.dataset = GenomicDataset(self.config)
+        # Create genomic dataset (conditional or regular)
+        if self.conditional_mode:
+            self.dataset = ConditionalGenomicDataset(self.config)
+            self.embedding_dims = self.dataset.get_embedding_dims()
+            print(f"Using conditional genomic dataset with embeddings: {self.embedding_dims}")
+        else:
+            self.dataset = GenomicDataset(self.config)
+        
         self.feature_dim = self.dataset.feature_dim
         
         # Build dataloaders using the existing build_dataloaders function
@@ -633,7 +844,7 @@ def load_config(config_path: str) -> Config:
     return Config(_config=config_dict)
 
 
-def create_model(config: Config, input_dim: int):
+def create_model(config: Config, input_dim: int, embedding_dims: Optional[Dict] = None):
     """Create model from config."""
     model_config = config.model
     opt_config = config.optimization
@@ -642,6 +853,25 @@ def create_model(config: Config, input_dim: int):
     norm_type = model_config['norm_type']
     if norm_type == "none":
         norm_type = None
+    
+    # Set up conditional parameters
+    conditional_mode = model_config.get('conditional_mode', False)
+    conditional_kwargs = {}
+    
+    if conditional_mode and embedding_dims is not None:
+        # Add embedding parameters for conditional mode
+        conditional_kwargs.update({
+            'conditional_mode': True,
+            'n_cell_lines': embedding_dims['n_cell_lines'],
+            'n_dose_levels': embedding_dims['n_dose_levels'],
+            'n_time_points': embedding_dims['n_time_points'],
+            'cell_embedding_dim': model_config.get('cell_embedding_dim', 32),
+            'dose_embedding_dim': model_config.get('dose_embedding_dim', 32),
+            'time_embedding_dim': model_config.get('time_embedding_dim', 32),
+        })
+        print(f"Creating conditional VAE with embeddings: {embedding_dims}")
+    elif conditional_mode:
+        raise ValueError("Conditional mode enabled but no embedding dimensions provided")
     
     return create_vae_model(
         input_dim=input_dim,
@@ -657,6 +887,7 @@ def create_model(config: Config, input_dim: int):
         T_max=model_config['T_max'],
         eta_min=model_config['eta_min'],
         warmup_epochs=model_config['warmup_epochs'],
+        **conditional_kwargs
     )
 
 
@@ -719,7 +950,7 @@ def setup_callbacks(config: Config):
                 filename="best-epoch={epoch:02d}-val_total_loss={val/total_loss:.3f}",
                 monitor="val/total_loss",
                 mode="min",
-                save_top_k=3,
+                save_top_k=1,
                 save_last=True,
                 auto_insert_metric_name=False,  # Prevents automatic metric insertion
             )
@@ -792,7 +1023,8 @@ def main():
     
     # Create model
     print("Creating model...")
-    model = create_model(config, data_module.feature_dim)
+    embedding_dims = getattr(data_module, 'embedding_dims', None)
+    model = create_model(config, data_module.feature_dim, embedding_dims)
     print(f"Model created with {sum(p.numel() for p in model.parameters()):,} parameters")
     
     # Setup training components

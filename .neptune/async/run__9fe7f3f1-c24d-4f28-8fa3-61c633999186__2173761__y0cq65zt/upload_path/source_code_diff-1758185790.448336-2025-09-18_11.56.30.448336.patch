@@ -1,0 +1,3980 @@
+diff --git a/.dvc/config b/.dvc/config
+index b201f12..87356e2 100644
+--- a/.dvc/config
++++ b/.dvc/config
+@@ -1,2 +1,3 @@
+ [core]
+     check_update = false
++    autostage = true
+diff --git a/README_CONFIG_USAGE.md b/README_CONFIG_USAGE.md
+deleted file mode 100644
+index a9b30d3..0000000
+--- a/README_CONFIG_USAGE.md
++++ /dev/null
+@@ -1,117 +0,0 @@
+-# VAE Training with Config Files
+-
+-The VAE training script now uses **config files only** - no command line arguments needed except for specifying the config file path.
+-
+-## Quick Start
+-
+-### 1. Submit a training job directly:
+-
+-```bash
+-# Train with VAE config
+-sbatch scripts/train_vae_triton.sh configs/train_vae_config.yaml
+-
+-# Train with AE config  
+-sbatch scripts/train_vae_triton.sh configs/train_ae_config.yaml
+-```
+-
+-### 2. Local training (for testing):
+-
+-```bash
+-# Train VAE locally
+-python train_vae.py --config configs/train_vae_config.yaml
+-
+-# Train AE locally
+-python train_vae.py --config configs/train_ae_config.yaml
+-```
+-
+-## Config File Structure
+-
+-All configuration is done through YAML files. Here's the structure:
+-
+-```yaml
+-# Data parameters
+-data:
+-  data_path: "/path/to/your/data.parquet"
+-  train_split: "/path/to/train_split.csv"  # Optional
+-  val_split: "/path/to/val_split.csv"      # Optional
+-  test_split: "/path/to/test_split.csv"    # Optional
+-  batch_size: 512
+-  num_workers: 8
+-
+-# Model parameters
+-model:
+-  model_type: "vae"        # "vae" or "ae"
+-  architecture: "vanilla"  # "vanilla", "medium", or "large"
+-  latent_dim: 128
+-  dropout: 0.1
+-  norm_type: "batchnorm"   # "batchnorm", "layernorm", or "none"
+-  beta: 1.0                # KL divergence weight (ignored for AE)
+-
+-# Optimization parameters
+-optimization:
+-  learning_rate: 1e-3
+-  weight_decay: 1e-4
+-
+-# Training parameters
+-training:
+-  max_epochs: 100
+-  patience: 15
+-  gpus: 1
+-  precision: 32
+-  seed: 42
+-
+-# Logging parameters
+-logging:
+-  experiment_name: "my_experiment"
+-  project_name: "jump-cell-painting"
+-  log_dir: "/path/to/logs"
+-  use_wandb: false
+-```
+-
+-## Available Config Files
+-
+-- `configs/train_vae_config.yaml` - Vanilla VAE with default dataset
+-- `configs/train_ae_config.yaml` - Vanilla AE with dummy data and splits
+-
+-## Creating Custom Configs
+-
+-1. Copy an existing config file:
+-```bash
+-cp configs/train_vae_config.yaml configs/my_config.yaml
+-```
+-
+-2. Edit the parameters as needed
+-
+-3. Submit the job:
+-```bash
+-sbatch scripts/train_vae_triton.sh configs/my_config.yaml
+-```
+-
+-## Benefits of Config-Only Approach
+-
+-- ✅ **Cleaner**: No long command lines
+-- ✅ **Reproducible**: Config files can be version controlled
+-- ✅ **Flexible**: Easy to create different experimental setups
+-- ✅ **Organized**: All parameters in one place
+-- ✅ **Shareable**: Send config files to collaborators
+-
+-## Example Workflow
+-
+-```bash
+-# 1. Create configs for different experiments
+-cp configs/train_vae_config.yaml configs/experiment_1.yaml
+-cp configs/train_vae_config.yaml configs/experiment_2.yaml
+-
+-# 2. Edit configs (change architecture, latent_dim, etc.)
+-vim configs/experiment_1.yaml  # Set architecture: "medium"
+-vim configs/experiment_2.yaml  # Set architecture: "large"
+-
+-# 3. Submit jobs
+-sbatch scripts/train_vae_triton.sh configs/experiment_1.yaml
+-sbatch scripts/train_vae_triton.sh configs/experiment_2.yaml
+-
+-# 4. Monitor jobs
+-squeue -u $USER
+-```
+-
+-This approach makes it much easier to manage multiple experiments and reproduce results! 
+\ No newline at end of file
+diff --git a/README_JSON_Results.md b/README_JSON_Results.md
+deleted file mode 100644
+index 4e1f93f..0000000
+--- a/README_JSON_Results.md
++++ /dev/null
+@@ -1,239 +0,0 @@
+-# VAE Training with Configurable Model Weight Saving
+-
+-This system has been enhanced to give you flexible control over model weight saving. You can choose to save both JSON results and model weights, or just JSON results for efficient hyperparameter sweeps.
+-
+-## Key Features
+-
+-### 1. Configurable Model Weight Saving
+-- **Configurable**: Control via `save_model_weights` parameter in config files
+-- **Default**: Model weights are saved (`save_model_weights: true`)
+-- **For sweeps**: Set to `false` to save only JSON results for efficiency
+-
+-### 2. JSON Results Logging (Always Enabled)
+-- **Always active**: Simple final metrics saving after training completion
+-- **Saves**: Final validation metrics and hyperparameters in JSON format
+-- **Location**: `{log_dir}/{experiment_name}/results/final_results.json`
+-
+-### 3. Files Created Per Experiment
+-
+-**When `save_model_weights: true` (default):**
+-```
+-vae_logs/
+-└── {experiment_name}/
+-    ├── checkpoints/
+-    │   ├── best-{epoch}-{val_loss}.ckpt    # Best model checkpoints
+-    │   └── last.ckpt                       # Latest checkpoint
+-    ├── final_model.ckpt                    # Final saved model
+-    └── results/
+-        └── final_results.json              # Final metrics and hyperparameters
+-```
+-
+-**When `save_model_weights: false`:**
+-```
+-vae_logs/
+-└── {experiment_name}/
+-    └── results/
+-        └── final_results.json              # Final metrics and hyperparameters
+-```
+-
+-## Configuration Options
+-
+-### Individual Experiments
+-
+-Add to your YAML config file:
+-```yaml
+-# Training parameters
+-training:
+-  max_epochs: 100
+-  patience: 15
+-  gpus: 1
+-  precision: 32
+-  seed: 42
+-  save_model_weights: true   # true = save weights, false = JSON only
+-```
+-
+-### Hyperparameter Sweeps
+-
+-Control for entire sweep in `scripts/vae_sweep_triton.sh`:
+-```bash
+-# Control model weight saving for the entire sweep
+-SAVE_MODEL_WEIGHTS=false  # Set to true to save model weights, false for JSON-only results
+-```
+-
+-## Usage Scenarios
+-
+-### 1. Hyperparameter Exploration (Recommended: `save_model_weights: false`)
+-```bash
+-# Edit scripts/vae_sweep_triton.sh
+-SAVE_MODEL_WEIGHTS=false
+-
+-# Run sweep
+-sbatch scripts/vae_sweep_triton.sh
+-
+-# Analyze results to find best hyperparameters
+-python analyze_hp_results.py --log_dir vae_logs
+-```
+-
+-**Benefits**: 
+-- Massive storage savings (can save TBs)
+-- Faster training (no checkpoint I/O)
+-- Quick results analysis
+-
+-### 2. Production Training (Use: `save_model_weights: true`)
+-```bash
+-# After identifying best hyperparameters from sweep analysis
+-# Create/edit config with save_model_weights: true
+-python train_vae.py --config configs/best_model_config.yaml
+-```
+-
+-**Benefits**:
+-- Full model weights for deployment
+-- Checkpoint recovery capability
+-- Complete experimental artifacts
+-
+-### 3. Hybrid Approach (Recommended Workflow)
+-```bash
+-# Stage 1: Fast hyperparameter search (no weights)
+-SAVE_MODEL_WEIGHTS=false
+-sbatch scripts/vae_sweep_triton.sh
+-
+-# Stage 2: Analyze and identify top performers
+-python analyze_hp_results.py --log_dir vae_logs
+-
+-# Stage 3: Re-train only best models with weight saving
+-# Use identified hyperparameters with save_model_weights: true
+-```
+-
+-## JSON File Structure
+-
+-### final_results.json
+-```json
+-{
+-  "hyperparameters": {
+-    "data": {
+-      "batch_size": 64,
+-      "normalize": true,
+-      "data_path": "..."
+-    },
+-    "model": {
+-      "model_type": "ae",
+-      "architecture": "vanilla",
+-      "latent_dim": 128,
+-      "dropout": 0.0,
+-      "norm_type": "batchnorm",
+-      "beta": 1.0
+-    },
+-    "optimization": {
+-      "learning_rate": 0.001,
+-      "weight_decay": 0.0
+-    },
+-    "training": {
+-      "max_epochs": 100,
+-      "patience": 15,
+-      "seed": 42,
+-      "save_model_weights": false
+-    }
+-  },
+-  "final_metrics": {
+-    "final_validation": {
+-      "total_loss": 1.489,
+-      "recon_loss": 1.489,
+-      "kl_loss": 0.0,
+-      "mae": 0.865
+-    }
+-  },
+-  "total_epochs": 45,
+-  "experiment_name": "jump_ae_vanilla",
+-  "saved_at": "2024-01-15 14:30:25.123456"
+-}
+-```
+-
+-## Running the Hyperparameter Sweep
+-
+-### 1. Configure Model Saving
+-Edit `scripts/vae_sweep_triton.sh`:
+-```bash
+-# For exploration (recommended)
+-SAVE_MODEL_WEIGHTS=false
+-
+-# For production runs  
+-SAVE_MODEL_WEIGHTS=true
+-```
+-
+-### 2. Submit the Job Array
+-```bash
+-sbatch scripts/vae_sweep_triton.sh
+-```
+-
+-This runs 216 experiments (180 VAE + 36 AE combinations):
+-- **Model types**: VAE, AE  
+-- **Architectures**: vanilla, medium, large
+-- **Normalization**: batchnorm, layernorm, none
+-- **Learning rates**: 1e-5, 1e-4, 1e-3, 1e-2
+-- **Beta values** (VAE only): 0.1, 0.5, 1.0, 5.0, 10.0
+-
+-### 3. Monitor Progress
+-```bash
+-# Check job status
+-squeue -u $USER
+-
+-# Check specific experiment output
+-tail -f script_outputs/vae_hp_search_42.out
+-
+-# Count completed experiments
+-ls vae_logs/*/results/training_metrics.json | wc -l
+-
+-# If saving weights, check model files too
+-ls vae_logs/*/checkpoints/*.ckpt | wc -l
+-```
+-
+-### 4. Analyze Results
+-```bash
+-# Run comprehensive analysis
+-python analyze_hp_results.py --log_dir vae_logs --output_dir hp_analysis
+-
+-# This creates:
+-# hp_analysis/
+-# ├── hyperparameter_sweep_results.csv    # Detailed results table
+-# ├── learning_rate_analysis.png          # Learning rate comparison
+-# ├── architecture_analysis.png           # Architecture comparison  
+-# ├── beta_analysis.png                   # Beta analysis (VAE only)
+-# └── normalization_analysis.png          # Normalization comparison
+-```
+-
+-## Benefits of This Flexible Approach
+-
+-### JSON-Only Mode (`save_model_weights: false`)
+-1. **Storage Efficient**: No model weights (saves TBs of space)
+-2. **Faster Training**: No checkpoint I/O overhead
+-3. **Quick Analysis**: Fast JSON parsing vs loading PyTorch models
+-4. **Scalable**: Handle hundreds of experiments efficiently
+-
+-### Full Model Mode (`save_model_weights: true`)
+-1. **Complete Artifacts**: Full model weights for deployment
+-2. **Recovery**: Resume training from checkpoints
+-3. **Best Model Access**: Load and use the best performing model
+-4. **Production Ready**: Everything needed for model deployment
+-
+-## Recommended Workflow
+-
+-```bash
+-# 1. Fast exploration phase (no weights)
+-# Edit vae_sweep_triton.sh: SAVE_MODEL_WEIGHTS=false
+-sbatch scripts/vae_sweep_triton.sh
+-
+-# 2. Analyze results 
+-python analyze_hp_results.py --log_dir vae_logs
+-
+-# 3. Identify top 3-5 configurations from analysis
+-
+-# 4. Re-train best models with weights
+-# Create configs with identified hyperparameters + save_model_weights: true
+-python train_vae.py --config configs/best_vae_config.yaml
+-python train_vae.py --config configs/best_ae_config.yaml
+-
+-# 5. Deploy best model
+-# Use saved checkpoints for final model deployment
+-```
+-
+-This two-stage approach maximizes efficiency: fast exploration followed by selective detailed training. 
+\ No newline at end of file
+diff --git a/analyze_hp_results.py b/analyze_hp_results.py
+index 8899f35..a60536a 100644
+--- a/analyze_hp_results.py
++++ b/analyze_hp_results.py
+@@ -98,7 +98,7 @@ def load_results(log_dir: str):
+     return results
+ 
+ 
+-def plot_line_charts(results, metric='final_train_total_loss'):
++def plot_line_charts(results, metric='final_train_total_loss', log_dir='vae_logs'):
+     """Create line plots: LR vs loss, grouped by norm type, subplots by architecture."""
+     
+     if not HAS_MATPLOTLIB:
+@@ -127,7 +127,7 @@ def plot_line_charts(results, metric='final_train_total_loss'):
+             print(f"  {arch} + {norm}: {len(set(available_lrs))} learning rates {sorted(set(available_lrs))}")
+     
+     # Create subplots
+-    fig, axes = plt.subplots(1, len(architectures), figsize=(5*len(architectures), 4))
++    fig, axes = plt.subplots(1, len(architectures), figsize=(5*len(architectures), 4), sharey=True)
+     if len(architectures) == 1:
+         axes = [axes]
+     
+@@ -172,10 +172,10 @@ def plot_line_charts(results, metric='final_train_total_loss'):
+             ax.legend(title='Normalization', bbox_to_anchor=(1.05, 1), loc='upper left')
+     
+     plt.tight_layout()
+-    plt.savefig(f'hp_analysis_{metric}.png', dpi=300, bbox_inches='tight')
++    plt.savefig(f'{log_dir}/hp_analysis_{metric}.png', dpi=300, bbox_inches='tight')
+     plt.close()
+     
+-    print(f"Plot saved: hp_analysis_{metric}.png")
++    print(f"Plot saved: {log_dir}/hp_analysis_{metric}.png")
+ 
+ 
+ def find_best(results, metric='final_train_total_loss'):
+@@ -223,7 +223,7 @@ def main():
+     find_best(results, args.metric)
+     
+     if HAS_MATPLOTLIB:
+-        plot_line_charts(results, args.metric)
++        plot_line_charts(results, args.metric, args.log_dir)
+     else:
+         print("\nInstall matplotlib for plots")
+ 
+diff --git a/configs/jump_mocop_LINCS_all_cell_lines.yml b/configs/jump_mocop_LINCS_all_cell_lines.yml
+deleted file mode 100644
+index ef9f24d..0000000
+--- a/configs/jump_mocop_LINCS_all_cell_lines.yml
++++ /dev/null
+@@ -1,92 +0,0 @@
+-seed: 0
+-dataloaders:
+-  _target_: training.build_dataloaders
+-  dataset:
+-    _target_: dataset.CellLineTripleInputGraphDatasetJUMP
+-    data_path: /scratch/work/masooda1/Multi_Modal_Contrastive/data/jump_data/cell_fetures_with_smiles.parquet
+-    genomic_data_path: /scratch/cs/pml/AI_drug/molecular_representation_learning/LINCS/landmark_cmp_data_min1000compounds_all_measurements.parquet
+-    pad_length: 250
+-  splits:
+-    train: /scratch/work/masooda1/Multi_Modal_Contrastive/data/LINCS_All_cell_lines/JUMP-LINCS-compound-split-0-train.csv
+-    val: /scratch/work/masooda1/Multi_Modal_Contrastive/data/LINCS_All_cell_lines/JUMP-LINCS-compound-split-0-val.csv
+-    test: /scratch/work/masooda1/Multi_Modal_Contrastive/data/LINCS_All_cell_lines/JUMP-LINCS-compound-split-0-test.csv
+-  batch_size: 1024
+-  num_workers: 24
+-  pin_memory: true
+-
+-model:
+-  _target_: model.CellLineTripleInputEncoder
+-  encoder_a:
+-    _target_: model.GatedGraphNeuralNetwork
+-    n_edge: 1
+-    in_dim: 75
+-    n_conv: 6
+-    fc_dims:
+-    - 1024
+-    p_dropout: 0.1
+-  encoder_b:
+-    _target_: model.MultiLayerPerceptron
+-    num_input_features: 3479  # morphological features
+-    hidden_layer_dimensions:
+-    - 512
+-    - 256
+-    - 128
+-    p_dropout: 0.1
+-  encoder_c:
+-    _target_: model.MultiLayerPerceptron
+-    num_input_features: 978   # genomic features
+-    hidden_layer_dimensions:
+-    - 256
+-    - 128
+-    p_dropout: 0.1
+-  supervised_head_dim:
+-  - 202
+-  non_lin_proj: true
+-  dim: 128
+-optimizer:
+-  _target_: torch.optim.AdamW
+-  lr: 0.001
+-scheduler:
+-  _target_: cosine_annealing_warmup.scheduler.CosineAnnealingWarmupRestarts
+-  first_cycle_steps: 1000
+-  cycle_mult: 1
+-  max_lr: 0.01
+-  min_lr: 1.0e-08
+-  warmup_steps: 50
+-scheduler_config:
+-  monitor: val/loss
+-trainer:
+-  _target_: pytorch_lightning.Trainer
+-  gpus: 1
+-  num_nodes: 1
+-  precision: 32
+-  max_epochs: 1000
+-  min_epochs: 50
+-  fast_dev_run: false
+-  check_val_every_n_epoch: 2
+-  callbacks:
+-  - _target_: pytorch_lightning.callbacks.early_stopping.EarlyStopping
+-    monitor: val/acc
+-    mode: max
+-    patience: 500
+-  - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+-    monitor: val/acc
+-    mode: max
+-    save_top_k: 2
+-    dirpath:
+-  logger:
+-    _target_: pytorch_lightning.loggers.WandbLogger
+-    project:
+-    save_dir: 
+-    name: 
+-    id: 
+-    mode:
+-test_model:
+-  _target_: model.CellLineTripleInputEncoder
+-  encoder_a: ${model.encoder_a}
+-  encoder_b: ${model.encoder_b}
+-  encoder_c: ${model.encoder_c}
+-  dim: ${model.dim}
+-  supervised_head_dim: ${model.supervised_head_dim}
+-  non_lin_proj: ${model.non_lin_proj}
+-test_model_ckpt: 
+\ No newline at end of file
+diff --git a/configs/train_ae_config.yaml b/configs/train_ae_config.yaml
+index 5ff11f3..ef3c810 100644
+--- a/configs/train_ae_config.yaml
++++ b/configs/train_ae_config.yaml
+@@ -3,6 +3,7 @@
+ 
+ # Data parameters
+ data:
++  modality: "jump_cp"  # Specify Cell Painting modality
+   data_path: "/scratch/work/masooda1/Multi_Modal_Contrastive/data/dummy_data/cell_fetures_with_smiles_2000.parquet"
+   train_split: "/scratch/work/masooda1/Multi_Modal_Contrastive/data/dummy_data/jump-compound-split-0-train.csv"
+   val_split: "/scratch/work/masooda1/Multi_Modal_Contrastive/data/dummy_data/jump-compound-split-0-val.csv"
+diff --git a/configs/train_ae_jump_cp_config.yaml b/configs/train_ae_jump_cp_config.yaml
+index 38957c8..23adfeb 100644
+--- a/configs/train_ae_jump_cp_config.yaml
++++ b/configs/train_ae_jump_cp_config.yaml
+@@ -4,8 +4,8 @@
+ # Data parameters
+ data:
+   modality: "jump_cp"  # Specify Cell Painting modality
+-  #data_path: "/scratch/work/masooda1/datasets/jump_preprocessed/jump_data_splits/cell_fetures_with_smiles.parquet"
+-  data_path: "/scratch/work/masooda1/datasets/jump_preprocessed/dummy_data/cell_fetures_with_smiles_2000.parquet"
++  data_path: "/scratch/work/masooda1/datasets/jump_preprocessed/jump_data_splits/cell_fetures_with_smiles.parquet"
++  #data_path: "/scratch/work/masooda1/datasets/jump_preprocessed/dummy_data/cell_fetures_with_smiles_2000.parquet"
+   train_split: "/scratch/work/masooda1/datasets/jump_preprocessed/jump_data_splits/jump-compound-split-0-train.csv"
+   val_split: "/scratch/work/masooda1/datasets/jump_preprocessed/jump_data_splits/jump-compound-split-0-val.csv"
+   test_split: "/scratch/work/masooda1/datasets/jump_preprocessed/jump_data_splits/jump-compound-split-0-val.csv"
+diff --git a/data/LINCS_splitting_all_cell_lines.py b/data/LINCS_splitting_all_cell_lines.py
+index fb8a6cc..1da86cb 100644
+--- a/data/LINCS_splitting_all_cell_lines.py
++++ b/data/LINCS_splitting_all_cell_lines.py
+@@ -4,6 +4,7 @@ import pandas as pd
+ import numpy as np
+ import os
+ import logging
++import argparse
+ from typing import List, Tuple, Dict
+ import random
+ from rdkit import Chem
+@@ -196,13 +197,30 @@ def process_splits(genomic_data_path: str, jump_data_path: str, output_dir: str,
+     save_splits(splits, output_dir, seed)
+ 
+ def main():
+-    # Define paths
+-    genomic_data_path = "/scratch/cs/pml/AI_drug/molecular_representation_learning/LINCS/landmark_cmp_data_min1000compounds_all_measurements.parquet"
+-    jump_data_path = "/scratch/work/masooda1/Multi_Modal_Contrastive/data/jump_data"
+-    output_dir = "/scratch/work/masooda1/Multi_Modal_Contrastive/data/LINCS_All_cell_lines"
++    parser = argparse.ArgumentParser(description="Create LINCS data splits for training")
++    
++    parser.add_argument("--genomic_data_path", type=str, required=True,
++                       help="Path to processed LINCS genomic data (parquet file)")
++    parser.add_argument("--jump_data_path", type=str, required=True,
++                       help="Path to directory containing JUMP data splits")
++    parser.add_argument("--output_dir", type=str, required=True,
++                       help="Directory to save LINCS and combined splits")
++    parser.add_argument("--seeds", type=int, nargs='+', default=[0, 1, 2],
++                       help="Random seeds for splits (default: 0 1 2)")
++    
++    args = parser.parse_args()
++    
++    logger.info(f"Creating LINCS splits with the following parameters:")
++    logger.info(f"  Genomic data path: {args.genomic_data_path}")
++    logger.info(f"  JUMP data path: {args.jump_data_path}")
++    logger.info(f"  Output directory: {args.output_dir}")
++    logger.info(f"  Seeds: {args.seeds}")
++    
+     # Process each split
+-    for seed in [0, 1, 2]:
+-        process_splits(genomic_data_path, jump_data_path, output_dir, seed)
++    for seed in args.seeds:
++        process_splits(args.genomic_data_path, args.jump_data_path, args.output_dir, seed)
++        
++    logger.info(f"\nCompleted all splits. Results saved to: {args.output_dir}")
+ 
+ if __name__ == "__main__":
+     main()
+\ No newline at end of file
+diff --git a/data/process_LINCS_data.py b/data/process_LINCS_data.py
+index 4a0b613..7db7a25 100644
+--- a/data/process_LINCS_data.py
++++ b/data/process_LINCS_data.py
+@@ -505,11 +505,6 @@ def plot_measurement_distributions(siginfo_merged: pd.DataFrame, data_dir: str)
+     dose_counts = siginfo_merged['pert_dose'].value_counts().sort_index()
+     time_counts = siginfo_merged['pert_time'].value_counts().sort_index()
+     
+-    logger.info("\nNumber of measurements at each dose:")
+-    logger.info(dose_counts.to_string())
+-    
+-    logger.info("\nNumber of measurements at each time point:")
+-    logger.info(time_counts.to_string())
+ 
+ def filter_measurements(siginfo_merged: pd.DataFrame, dose_min: float, dose_max: float, time_points: list) -> pd.DataFrame:
+     """
+@@ -617,7 +612,7 @@ def process_LINCS_data(data_dir: str,
+             siginfo_merged = convert_to_bins(siginfo_merged, 'pert_dose')
+         if test_mode:
+             logger.info("TEST MODE: Using only first batch of compounds")
+-            siginfo_merged = siginfo_merged.head(1000)
++            siginfo_merged = siginfo_merged.head(50000)
+         
+         landmark_gene_ids = get_landmark_genes(gene_info)
+         complete_data = process_expression_data(data_dir, siginfo_merged, landmark_gene_ids)
+diff --git a/data/process_data_trirton.sh b/data/process_data_trirton.sh
+deleted file mode 100644
+index fa3e9b6..0000000
+--- a/data/process_data_trirton.sh
++++ /dev/null
+@@ -1,85 +0,0 @@
+-#!/bin/bash -l
+-#SBATCH --time=02:00:00
+-#SBATCH --mem=40G
+-#SBATCH --job-name=process_jump_data
+-#SBATCH --output=/scratch/work/masooda1/Multi_Modal_Contrastive/script_outputs/process_jump_data.out
+-
+-# Check if arguments are provided
+-if [ $# -ne 2 ]; then
+-    echo "❌ ERROR: This script requires exactly 2 arguments"
+-    echo "Usage: $0 <preprocessed_directory> <conda_environment>"
+-    echo "Example: $0 /scratch/work/masooda1/datasets/jump_preprocessed mocop"
+-    exit 1
+-fi
+-
+-# Get arguments
+-PREPROCESSED_DIR=$1
+-CONDA_ENV=$2
+-
+-# Data directories based on preprocessed dir
+-SPLITS_DIR="$PREPROCESSED_DIR/jump_data_splits"
+-DUMMY_DATA_DIR="$PREPROCESSED_DIR/dummy_data"
+-
+-echo "🚀 Starting JUMP data processing..."
+-echo "📁 Preprocessed data directory: $PREPROCESSED_DIR"
+-echo "📁 Splits directory: $SPLITS_DIR"
+-echo "📁 Dummy data directory: $DUMMY_DATA_DIR"
+-echo "🐍 Conda environment: $CONDA_ENV"
+-
+-# Setup conda environment
+-echo "🐍 Activating conda environment: $CONDA_ENV"
+-module load mamba
+-source activate "$CONDA_ENV"
+-if [ $? -ne 0 ]; then
+-    echo "❌ Error: Failed to activate conda environment."
+-    exit 1
+-fi
+-
+-# First: Aggregate original data (without --is_centered flag)
+-echo "=== Aggregating ORIGINAL data ==="
+-python -u /scratch/work/masooda1/Multi_Modal_Contrastive/data/_jump_aggregate.py -d $PREPROCESSED_DIR -o $PREPROCESSED_DIR
+-if [ $? -ne 0 ]; then
+-    echo "❌ Error: Failed to aggregate original data."
+-    exit 1
+-fi
+-
+-# Second: Aggregate centered data (with --is_centered flag)  
+-echo "=== Aggregating CENTERED data ==="
+-python -u /scratch/work/masooda1/Multi_Modal_Contrastive/data/_jump_aggregate.py -d $PREPROCESSED_DIR -o $PREPROCESSED_DIR --is_centered
+-if [ $? -ne 0 ]; then
+-    echo "❌ Error: Failed to aggregate centered data."
+-    exit 1
+-fi
+-
+-echo "=== Aggregation completed! ==="
+-
+-# Cleanup individual plate files after aggregation
+-echo "=== Starting cleanup of individual plate files ==="
+-python -u /scratch/work/masooda1/Multi_Modal_Contrastive/data/cleanup_individual_plates.py $PREPROCESSED_DIR
+-if [ $? -ne 0 ]; then
+-    echo "❌ Error: Failed to cleanup individual plate files."
+-    exit 1
+-fi
+-
+-echo "=== Creating data splits ==="
+-mkdir -p ${SPLITS_DIR}
+-python -u /scratch/work/masooda1/Multi_Modal_Contrastive/data/jump_data_splits.py \
+-    ${PREPROCESSED_DIR}/centered.filtered.parquet \
+-    ${SPLITS_DIR}
+-if [ $? -ne 0 ]; then
+-    echo "❌ Error: Failed to create data splits."
+-    exit 1
+-fi
+-
+-echo "=== Creating dummy data ==="
+-mkdir -p ${DUMMY_DATA_DIR}
+-python -u /scratch/work/masooda1/Multi_Modal_Contrastive/data/dummy_data/script_for_dummy_data/cellular_data_split.py \
+-    ${PREPROCESSED_DIR}/centered.filtered.parquet \
+-    ${DUMMY_DATA_DIR}
+-if [ $? -ne 0 ]; then
+-    echo "❌ Error: Failed to create dummy data."
+-    exit 1
+-fi
+-
+-echo "✅ All processing completed successfully!"
+-
+diff --git a/dvc.lock b/dvc.lock
+index e25d2cb..2ac173f 100644
+--- a/dvc.lock
++++ b/dvc.lock
+@@ -44,14 +44,13 @@ stages:
+       md5: 19df6f3032988e97032a3b1580ae1863
+       size: 1890
+   process_lincs_data:
+-    cmd: sbatch data/process_LINCS_data.sh 
+-      /scratch/work/masooda1/datasets/LINCS/ 
+-      /scratch/work/masooda1/datasets/LINCS_preprocessed/ cmappy_env
++    cmd: "sbatch data/process_LINCS_data.sh /scratch/work/masooda1/datasets/LINCS/
++      /scratch/work/masooda1/datasets/LINCS_preprocessed/ cmappy_env\n"
+     deps:
+     - path: data/process_LINCS_data.py
+       hash: md5
+-      md5: d3f54d5ec353e063db8d5cfc97e22936
+-      size: 31768
++      md5: ce3fbe7440fad5ced4739f14ad37c663
++      size: 31769
+     - path: data/process_LINCS_data.sh
+       hash: md5
+       md5: 0aea62b05f36b9ac2c19118d6ab08601
+@@ -78,16 +77,16 @@ stages:
+     deps:
+     - path: configs/train_ae_jump_cp_config.yaml
+       hash: md5
+-      md5: fb0348bfc70f13e268c7860143ba13d8
++      md5: 9df7a9e4636ae3fd7c9c50942b92a16e
+       size: 2759
+     - path: evaluate_vae.py
+       hash: md5
+-      md5: 6d41218bbc71fcaf4dc472f183cb766b
+-      size: 26937
++      md5: 468815e7bc66e207bf1efa5dc9ec8681
++      size: 27231
+     - path: scripts/evaluate_vae_triton.sh
+       hash: md5
+-      md5: 331649cf7af0b029609364675fb03357
+-      size: 1471
++      md5: ab0a620716016efc1c12812ca0253df5
++      size: 1472
+     - path: vae_logs_jump_cp/jump_ae_best/checkpoints/last.ckpt
+       hash: md5
+       md5: aa3d7046584692b0a9d8da98ffd3b7ed
+@@ -112,3 +111,232 @@ stages:
+       hash: md5
+       md5: 90e8210dfea77b17995eed0a504c783b
+       size: 1142
++  create_lincs_splits:
++    cmd: "sbatch data/create_lincs_splits.sh /scratch/work/masooda1/datasets/LINCS_preprocessed/landmark_cmp_data_min1000compounds_all_measurements.parquet
++      /scratch/work/masooda1/datasets/jump_preprocessed/jump_data_splits /scratch/work/masooda1/datasets/LINCS_preprocessed/LINCS_splits
++      mocop\n"
++    deps:
++    - path: data/LINCS_splitting_all_cell_lines.py
++      hash: md5
++      md5: b5a00a433e7ac17ddc8a42585484b89c
++      size: 8293
++    - path: data/create_lincs_splits.sh
++      hash: md5
++      md5: a443eb5cd3a88e4d3f4ebbba3a4a9252
++      size: 2666
++  analyze_hp_results:
++    cmd: "python analyze_hp_results.py --log_dir vae_logs_lincs_conditional --metric
++      final_validation_total_loss\n"
++    deps:
++    - path: analyze_hp_results.py
++      hash: md5
++      md5: 010e9bbd236cceedab26df0c56a7b55a
++      size: 9175
++    - path: vae_logs_lincs_conditional/
++      hash: md5
++      md5: 9cb9c6fad80d106124f5840ccda24cd2.dir
++      size: 2568514496
++      nfiles: 651
++  vae_sweep_lincs:
++    cmd: "sbatch scripts/vae_sweep_LINCS.sh\n"
++    deps:
++    - path: configs/train_ae_genomic_config.yaml
++      hash: md5
++      md5: e49618c71e495276607e9f2b9a9adea4
++      size: 2783
++    - path: scripts/vae_sweep_LINCS.sh
++      hash: md5
++      md5: d751d3134019f9c74ffe766f5f8f8e47
++      size: 5828
++    - path: train_vae.py
++      hash: md5
++      md5: 53c49d47b33b195f9b7f38ccff223f60
++      size: 34197
++  train_ae_for_lincs:
++    cmd: "sbatch scripts/train_vae_triton.sh configs/train_ae_genomic_conditional_config.yaml
++      mocop\n"
++    deps:
++    - path: configs/train_ae_genomic_conditional_config.yaml
++      hash: md5
++      md5: d8044f95034ff3aedd1da8d530fdeead
++      size: 2954
++    - path: scripts/train_vae_triton.sh
++      hash: md5
++      md5: ad5060a55fc0523692d39a656f74a6c6
++      size: 1426
++    - path: train_vae.py
++      hash: md5
++      md5: ba45ee9e856928e9fa8ae421b60c40d7
++      size: 45644
++  train_jump_mocop_lincs_baseline:
++    cmd: "sbatch scripts/train_jump_mocop_LINCS_baseline_triton.sh /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Vanilla_Clip_without_VAE
++      JUMP_LINCS_Vanilla_Clip_without_VAE.yml mocop\n"
++    deps:
++    - path: bin/train.py
++      hash: md5
++      md5: 442b714d25bc979b0a8ca1166207d3dd
++      size: 601
++    - path: configs/JUMP_LINCS_Vanilla_Clip_without_VAE.yml
++      hash: md5
++      md5: 7e1215f389c0d8132b75f59a5ef56759
++      size: 4053
++    - path: mocop/
++      hash: md5
++      md5: 5e7abb5fd45dab314f530a6f8b5c0280.dir
++      size: 3990811
++      nfiles: 34
++    - path: scripts/train_jump_mocop_LINCS_baseline_triton.sh
++      hash: md5
++      md5: a6b3f01eab4dd071c6eca1949d05a5fd
++      size: 2350
++  train_jump_mocop_lincs_pretrained:
++    cmd: "sbatch scripts/train_jump_mocop_LINCS_pretrained_triton.sh /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Vanilla_Clip_pretrained_VAE
++      jump_mocop_LINCS_with_pretrained.yml mocop\n"
++    deps:
++    - path: bin/train.py
++      hash: md5
++      md5: 442b714d25bc979b0a8ca1166207d3dd
++      size: 601
++    - path: configs/jump_mocop_LINCS_with_pretrained.yml
++      hash: md5
++      md5: e8a061cbe3edf0431fedb45865f6cd66
++      size: 4052
++    - path: mocop/
++      hash: md5
++      md5: 5e7abb5fd45dab314f530a6f8b5c0280.dir
++      size: 3990811
++      nfiles: 34
++    - path: scripts/train_jump_mocop_LINCS_pretrained_triton.sh
++      hash: md5
++      md5: 756b6078790cf8cd3cea9362d766d0d6
++      size: 2375
++  finetune_MultiModal_on_DILI:
++    cmd: "sbatch scripts/MultiModal_finetuning_DILI.sh /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_finetuning
++      /scratch/work/masooda1/Multi_Modal_Contrastive/models/jump_mocop_seed_0_split_0/version_0/checkpoints/best_ckpt.ckpt
++      MultiModal_finetuning_DILI.yml mocop\n"
++    deps:
++    - path: 
++        /scratch/work/masooda1/datasets/downstream_datasets/DILI/DILI_Goldstandard_1111.csv
++      hash: md5
++      md5: efb473a99104e065472ae93251b2d0c6
++      size: 195950
++    - path: bin/remap_state_dict.py
++      hash: md5
++      md5: 875d1914df37a9b9ce219e0fa2ec5b00
++      size: 1048
++    - path: bin/test.py
++      hash: md5
++      md5: bbaba4623e9a29c6e3969a102c095614
++      size: 554
++    - path: bin/train.py
++      hash: md5
++      md5: 442b714d25bc979b0a8ca1166207d3dd
++      size: 601
++    - path: configs/MultiModal_finetuning_DILI.yml
++      hash: md5
++      md5: 778f607f0c6a12002bfe0b43bd7e44f8
++      size: 2442
++    - path: mocop/
++      hash: md5
++      md5: 643ace154cae274bce10b6dae3226d2e.dir
++      size: 4001451
++      nfiles: 34
++    - path: scripts/MultiModal_finetuning_DILI.sh
++      hash: md5
++      md5: c2070cc18b1daa21cd867b352c38a59b
++      size: 6767
++  rf_analysis_DILI:
++    cmd: "sbatch scripts/run_rf_analysis.sh RF_analysis_DILI.yaml /scratch/work/masooda1/Multi_Modal_Contrastive/rf_results_with_Triencoder_average_precision
++      mocop\n"
++    deps:
++    - path: 
++        /scratch/work/masooda1/datasets/downstream_datasets/DILI/test_data_heldouttest_DILIst_223.csv
++      hash: md5
++      md5: 0c2cf27acbbe1552047bf3251620d433
++      size: 3767397
++    - path: 
++        /scratch/work/masooda1/datasets/downstream_datasets/DILI/test_data_ncv_DILIst_888.csv
++      hash: md5
++      md5: d51c65c04f3a71f17408374e00c7280d
++      size: 15041360
++    - path: configs/RF_analysis_DILI.yaml
++      hash: md5
++      md5: f96943a4e2d19d7cb9a3c3fa20ec44c9
++      size: 2364
++    - path: mocop/
++      hash: md5
++      md5: 643ace154cae274bce10b6dae3226d2e.dir
++      size: 4001451
++      nfiles: 34
++    - path: scripts/extract_embeddings_and_train_rf.py
++      hash: md5
++      md5: fdf30212d7c9dacf532146f8f66c0ce1
++      size: 19813
++    - path: scripts/run_rf_analysis.sh
++      hash: md5
++      md5: df177a0fc1b8eea33d6283adbcacc54c
++      size: 2515
++  train_jump_mocop_lincs_soft_Clip_pretrained:
++    cmd: "sbatch scripts/train_jump_mocop_LINCS_soft_Clip_pretrained_triton.sh /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Soft_Hard_Clip_pretrained_VAE
++      jump_mocop_LINCS_soft_Clip_with_pretrained.yml mocop\n"
++    deps:
++    - path: bin/train.py
++      hash: md5
++      md5: 442b714d25bc979b0a8ca1166207d3dd
++      size: 601
++    - path: configs/jump_mocop_LINCS_soft_Clip_with_pretrained.yml
++      hash: md5
++      md5: ef065c431826c8ce53a7b0e9c12cee0a
++      size: 4172
++    - path: mocop/
++      hash: md5
++      md5: dc8863b21ce86857cdb7f73d429c1b98.dir
++      size: 4022939
++      nfiles: 34
++    - path: scripts/train_jump_mocop_LINCS_soft_Clip_pretrained_triton.sh
++      hash: md5
++      md5: 66ac57ca3da9423f0899eff7e94df814
++      size: 2398
++  train_jump_mocop_lincs_pretrained_dummy:
++    cmd: "sbatch scripts/train_jump_mocop_LINCS_pretrained_triton.sh /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Vanilla_Clip_pretrained_VAE_dummy
++      jump_mocop_LINCS_with_pretrained_dummy.yml mocop\n"
++    deps:
++    - path: bin/train.py
++      hash: md5
++      md5: 442b714d25bc979b0a8ca1166207d3dd
++      size: 601
++    - path: configs/jump_mocop_LINCS_with_pretrained_dummy.yml
++      hash: md5
++      md5: f9cde54ee19a0dda8f0802295946f9f2
++      size: 4049
++    - path: mocop/
++      hash: md5
++      md5: 7cfc240fa02140007fdb2eacd2a66b88.dir
++      size: 4052728
++      nfiles: 36
++    - path: scripts/train_jump_mocop_LINCS_pretrained_triton.sh
++      hash: md5
++      md5: a41773cbfdcebdda789fb000b56a6fe1
++      size: 2378
++  train_jump_mocop_lincs_student_teacher_pretrained:
++    cmd: "sbatch scripts/train_jump_mocop_LINCS_student_teacher_pretrained_triton.sh
++      /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Momentum_Clip_pretrained_VAE
++      jump_mocop_LINCS_student_teacher_pretrained.yml mocop\n"
++    deps:
++    - path: bin/train.py
++      hash: md5
++      md5: 442b714d25bc979b0a8ca1166207d3dd
++      size: 601
++    - path: configs/jump_mocop_LINCS_student_teacher_pretrained.yml
++      hash: md5
++      md5: b3a23ee39f175068526827c2f89cd3fd
++      size: 5329
++    - path: mocop/
++      hash: md5
++      md5: f59b002e234c052bb7db2ffd31eb6cf6.dir
++      size: 4050523
++      nfiles: 36
++    - path: scripts/train_jump_mocop_LINCS_student_teacher_pretrained_triton.sh
++      hash: md5
++      md5: a42ebb9714b478ce84ebd77c75ca0b46
++      size: 4216
+diff --git a/dvc.yaml b/dvc.yaml
+index bee4783..2fe747b 100644
+--- a/dvc.yaml
++++ b/dvc.yaml
+@@ -35,6 +35,31 @@ stages:
+       - data/process_LINCS_data.py
+     desc: "Process LINCS data"
+ 
++  # Create LINCS data splits
++  create_lincs_splits:
++    cmd: >
++      sbatch data/create_lincs_splits.sh
++      /scratch/work/masooda1/datasets/LINCS_preprocessed/landmark_cmp_data_min1000compounds_all_measurements.parquet
++      /scratch/work/masooda1/datasets/jump_preprocessed/jump_data_splits
++      /scratch/work/masooda1/datasets/LINCS_preprocessed/LINCS_splits
++      mocop
++    deps:
++      - data/create_lincs_splits.sh
++      - data/LINCS_splitting_all_cell_lines.py
++    desc: "Create LINCS and combined JUMP-LINCS data splits"
++
++# JUMP VAE Hyperparameter Sweep
++  vae_sweep_jump:
++    cmd: >
++      sbatch scripts/vae_sweep_JUMP.sh
++    deps:
++      - scripts/vae_sweep_JUMP.sh
++      - configs/train_ae_config.yaml
++      - train_vae.py
++    outs:
++      - vae_logs/
++    desc: "Run VAE hyperparameter sweep on JUMP data"
++
+   # Train Autoencoder on JUMP data
+   train_ae_for_jump_cp:
+     cmd: >
+@@ -74,9 +99,179 @@ stages:
+       - vae_logs_jump_cp/jump_ae_best/checkpoints/last.ckpt
+       - vae_logs_jump_cp/jump_ae_best/normalization_params.npz
+     desc: "Evaluate trained Autoencoder on JUMP data"
+-    
+-#
+-#  # Multi-Modal Contrastive Learning Stages
++
++  # LINCS VAE Hyperparameter Sweep  
++  vae_sweep_lincs:
++    cmd: >
++      sbatch scripts/vae_sweep_LINCS.sh
++    deps:
++      - scripts/vae_sweep_LINCS.sh
++      - configs/train_ae_genomic_config.yaml
++      - train_vae.py
++    desc: "Run VAE hyperparameter sweep on LINCS data"
++
++  # Analyze Hyperparameter Results
++  analyze_hp_results:
++    cmd: >
++      python analyze_hp_results.py --log_dir vae_logs_lincs_conditional --metric final_validation_total_loss
++    deps:
++      - analyze_hp_results.py
++      - vae_logs_lincs_conditional/
++    desc: "Analyze hyperparameter tuning results for LINCS data" 
++
++  # Train AE on LINCS data
++  train_ae_for_lincs:
++    cmd: >
++      sbatch scripts/train_vae_triton.sh
++      configs/train_ae_genomic_conditional_config.yaml
++      mocop
++    deps:
++      - scripts/train_vae_triton.sh
++      - configs/train_ae_genomic_conditional_config.yaml
++      - train_vae.py
++    desc: "Train Autoencoder on LINCS data"
++
++  # Multi-Modal Contrastive Learning Stages
++  # Train multimodal model without pretrained encoders (baseline)
++  train_jump_mocop_lincs_baseline:
++    cmd: >
++      sbatch scripts/train_jump_mocop_LINCS_baseline_triton.sh
++      /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Vanilla_Clip_without_VAE
++      JUMP_LINCS_Vanilla_Clip_without_VAE.yml
++      mocop
++    deps:
++      - scripts/train_jump_mocop_LINCS_baseline_triton.sh
++      - configs/JUMP_LINCS_Vanilla_Clip_without_VAE.yml
++      - bin/train.py
++      - mocop/
++    desc: "Train multimodal model without pretrained encoders (baseline)"
++
++  # Train multimodal model with pretrained encoders
++  train_jump_mocop_lincs_pretrained:
++    cmd: >
++      sbatch scripts/train_jump_mocop_LINCS_pretrained_triton.sh
++      /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Vanilla_Clip_pretrained_VAE
++      jump_mocop_LINCS_with_pretrained.yml
++      mocop
++    deps:
++      - scripts/train_jump_mocop_LINCS_pretrained_triton.sh
++      - configs/jump_mocop_LINCS_with_pretrained.yml
++      - bin/train.py
++      - mocop/
++    desc: "Train multimodal model with pretrained AE encoders"
++
++    # Train multimodal model with pretrained encoders (dummy data)
++  train_jump_mocop_lincs_pretrained_dummy:
++    cmd: >
++      sbatch scripts/train_jump_mocop_LINCS_pretrained_triton.sh
++      /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Vanilla_Clip_pretrained_VAE_dummy
++      jump_mocop_LINCS_with_pretrained_dummy.yml
++      mocop
++    deps:
++      - scripts/train_jump_mocop_LINCS_pretrained_triton.sh
++      - configs/jump_mocop_LINCS_with_pretrained_dummy.yml
++      - bin/train.py
++      - mocop/
++    desc: "Train multimodal model with pretrained AE encoders (dummy data)"
++
++  # Train with frozen pretrained encoders (feature extraction)
++  train_jump_mocop_lincs_frozen:
++    cmd: >
++      sbatch exp/train_jump_mocop_LINCS_frozen_triton.sh
++      /scratch/cs/pml/AI_drug/trained_model_pred/mocop_LINCS_frozen
++    deps:
++      - exp/train_jump_mocop_LINCS_frozen_triton.sh
++      - configs/jump_mocop_LINCS_frozen_encoders.yml
++      - bin/train.py
++      - mocop/
++      - vae_logs_jump_cp/jump_ae_best/checkpoints/best-epoch=2094-val_total_loss=0.103.ckpt
++      - vae_logs_lincs/genomic_ae_best/checkpoints/best-epoch=7907-val_total_loss=0.501.ckpt
++    outs:
++      - /scratch/cs/pml/AI_drug/trained_model_pred/mocop_LINCS_frozen/
++    desc: "Train multimodal model with frozen pretrained encoders"
++
++  # Train multimodal model with Soft Hard Clip pretrained encoders
++  train_jump_mocop_lincs_soft_Clip_pretrained:
++    cmd: >
++      sbatch scripts/train_jump_mocop_LINCS_soft_Clip_pretrained_triton.sh
++      /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Soft_Hard_Clip_pretrained_VAE
++      jump_mocop_LINCS_soft_Clip_with_pretrained.yml
++      mocop
++    deps:
++      - scripts/train_jump_mocop_LINCS_soft_Clip_pretrained_triton.sh
++      - configs/jump_mocop_LINCS_soft_Clip_with_pretrained.yml
++      - bin/train.py
++      - mocop/
++    desc: "Train multimodal model with Soft Hard Clip pretrained AE encoders"
++
++  train_jump_mocop_lincs_student_teacher_pretrained:
++    cmd: >
++      sbatch scripts/train_jump_mocop_LINCS_student_teacher_pretrained_triton.sh
++      /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training/Momentum_Clip_pretrained_VAE
++      jump_mocop_LINCS_student_teacher_pretrained.yml
++      mocop
++    deps:
++      - scripts/train_jump_mocop_LINCS_student_teacher_pretrained_triton.sh
++      - configs/jump_mocop_LINCS_student_teacher_pretrained.yml
++      - bin/train.py
++      - mocop/
++    desc: "Train multimodal model with Student Teacher with pretrained AE encoders"
++
++  # Downstream Task Evaluation with CellLine MoCop
++  # ChEMBL20 Linear Evaluation
++  train_chembl20_cellline_mocop_linear:
++    cmd: >
++      sbatch exp/train_chembl20_cellline_mocop_linear_triton.sh
++      /scratch/work/masooda1/trained_model_pred/cellline_mocop
++      /path/to/cellline_mocop_checkpoint.ckpt
++      chembl20_cellline_mocop_linear.yml
++      mocop
++    deps:
++      - exp/train_chembl20_cellline_mocop_linear_triton.sh
++      - configs/chembl20_cellline_mocop_linear.yml
++      - bin/train.py
++      - bin/test.py
++      - bin/remap_state_dict.py
++      - mocop/
++    outs:
++      - /scratch/work/masooda1/trained_model_pred/cellline_mocop/chembl_20_pretrained_cellline_mocop_linear_prob/
++    desc: "ChEMBL20 linear evaluation with CellLine MoCop molecular encoder"
++
++  # DILI Finetuning Evaluation
++  finetune_MultiModal_on_DILI:
++    cmd: >
++      sbatch scripts/MultiModal_finetuning_DILI.sh
++      /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_finetuning
++      /scratch/work/masooda1/Multi_Modal_Contrastive/models/jump_mocop_seed_0_split_0/version_0/checkpoints/best_ckpt.ckpt
++      MultiModal_finetuning_DILI.yml
++      mocop
++    deps:
++      - scripts/MultiModal_finetuning_DILI.sh
++      - configs/MultiModal_finetuning_DILI.yml
++      - bin/train.py
++      - bin/test.py
++      - bin/remap_state_dict.py
++      - mocop/
++      - /scratch/work/masooda1/datasets/downstream_datasets/DILI/DILI_Goldstandard_1111.csv
++    desc: "DILI finetuning with CellLine MoCop molecular encoder"
++
++  # DILI Random Forest Analysis with Embeddings
++  rf_analysis_DILI:
++    cmd: >
++      sbatch scripts/run_rf_analysis.sh
++      RF_analysis_DILI.yaml
++      /scratch/work/masooda1/Multi_Modal_Contrastive/rf_results_with_Triencoder_average_precision
++      mocop
++    deps:
++      - scripts/run_rf_analysis.sh
++      - scripts/extract_embeddings_and_train_rf.py
++      - configs/RF_analysis_DILI.yaml
++      - mocop/
++      - /scratch/work/masooda1/datasets/downstream_datasets/DILI/test_data_ncv_DILIst_888.csv
++      - /scratch/work/masooda1/datasets/downstream_datasets/DILI/test_data_heldouttest_DILIst_223.csv
++    desc: "Extract embeddings from pretrained model and train Random Forest with nested CV for DILI prediction"
++
++#  # Legacy commented stages
+ #  train_jump_mocop:
+ #    cmd: sbatch exp/train_jump_mocop_triton.sh
+ #    deps:
+diff --git a/environment.yml b/environment.yml
+index 19dfc13..6ecd9ff 100644
+--- a/environment.yml
++++ b/environment.yml
+@@ -7,13 +7,19 @@ dependencies:
+   - black=23.3.0
+   - charset-normalizer=2.0.4
+   - cudatoolkit=11.3.1
++  - deepchem=2.8.0
+   - isort=5.9.3
++  - joblib=1.4.2
+   - numpy-base=1.23.5
+   - openeye-toolkits=2021.2.0
+   - optuna=3.1.0
++  - pooch=1.8.2
+   - python=3.8.12
+   - pytorch=1.11.0
+   - s3fs=2023.4.0
++  - scikit-learn=1.3.2
++  - scipy=1.10.1
++  - threadpoolctl=3.5.0
+   - tqdm=4.64.1
+   - yaml=0.2.5
+   - pip:
+@@ -27,8 +33,6 @@ dependencies:
+     - pandas==1.5.3
+     - pyarrow==11.0.0
+     - pytorch-lightning==1.9.3
+-    - scikit-learn==1.0.2
+-    - scipy==1.8.0
+     - tensorboard==2.11.2
+     - dvc==3.42.0
+     - umap-learn==0.5.3
+diff --git a/evaluate_vae.py b/evaluate_vae.py
+index 005e4c8..5854db8 100644
+--- a/evaluate_vae.py
++++ b/evaluate_vae.py
+@@ -10,11 +10,13 @@ import pandas as pd
+ import numpy as np
+ import torch
+ import matplotlib.pyplot as plt
++from matplotlib.colors import LogNorm
+ import seaborn as sns
+ from sklearn.manifold import TSNE
+ from sklearn.decomposition import PCA
+ from sklearn.metrics import silhouette_score, r2_score
+ from sklearn.cluster import KMeans
++from scipy.stats import rankdata
+ import pytorch_lightning as pl
+ from torch.utils.data import DataLoader, TensorDataset
+ 
+@@ -39,6 +41,8 @@ def compute_reconstruction_metrics(model: JUMPVAE, dataloader: DataLoader, devic
+     
+     all_original = []
+     all_reconstructed = []
++    all_original_norm = []
++    all_reconstructed_norm = []
+     all_latent = []
+     
+     # Get normalization parameters from dataset
+@@ -62,6 +66,10 @@ def compute_reconstruction_metrics(model: JUMPVAE, dataloader: DataLoader, devic
+             x_norm = batch.to(device)
+             x_recon_norm, mu, logvar = model(x_norm)
+             
++            # Store normalized versions
++            all_original_norm.append(x_norm.cpu().numpy())
++            all_reconstructed_norm.append(x_recon_norm.cpu().numpy())
++            
+             # Denormalize to original space
+             x_orig = x_norm.cpu().numpy() * feature_std.flatten() + feature_mean.flatten()
+             x_recon_orig = x_recon_norm.cpu().numpy() * feature_std.flatten() + feature_mean.flatten()
+@@ -73,11 +81,15 @@ def compute_reconstruction_metrics(model: JUMPVAE, dataloader: DataLoader, devic
+     # Concatenate all batches
+     original = np.concatenate(all_original, axis=0)
+     reconstructed = np.concatenate(all_reconstructed, axis=0)
++    original_norm = np.concatenate(all_original_norm, axis=0)
++    reconstructed_norm = np.concatenate(all_reconstructed_norm, axis=0)
+     latent = np.concatenate(all_latent, axis=0)
+     
+     # Debug: Check data ranges
+     print(f"Original data range: {original.min():.3f} to {original.max():.3f}")
+     print(f"Reconstructed data range: {reconstructed.min():.3f} to {reconstructed.max():.3f}")
++    print(f"Normalized original data range: {original_norm.min():.3f} to {original_norm.max():.3f}")
++    print(f"Normalized reconstructed data range: {reconstructed_norm.min():.3f} to {reconstructed_norm.max():.3f}")
+     print(f"Original shape: {original.shape}")
+     
+     # Compute sample-wise metrics (average across features for each sample)
+@@ -107,10 +119,25 @@ def compute_reconstruction_metrics(model: JUMPVAE, dataloader: DataLoader, devic
+     print(f"Feature R² range: {np.nanmin(feature_r2):.3f} to {np.nanmax(feature_r2):.3f}")
+     print(f"Sample MAE range: {np.nanmin(sample_mae):.3f} to {np.nanmax(sample_mae):.3f}")
+     
+-    # Additional R² statistics to understand the distribution
++    # Additional robust statistics for both MAE and R²
++    sample_mae_clean = sample_mae[~np.isnan(sample_mae)]
+     feature_r2_clean = feature_r2[~np.isnan(feature_r2)]
++    
++    # MAE outlier analysis
++    mae_extreme_outliers = np.sum(sample_mae_clean > np.percentile(sample_mae_clean, 95) + 3 * (np.percentile(sample_mae_clean, 95) - np.percentile(sample_mae_clean, 5)))
++    
++    print(f"\n📊 Sample MAE Distribution Analysis:")
++    print(f"   Median MAE: {np.median(sample_mae_clean):.6f}")
++    print(f"   75th percentile MAE: {np.percentile(sample_mae_clean, 75):.6f}")
++    print(f"   90th percentile MAE: {np.percentile(sample_mae_clean, 90):.6f}")
++    print(f"   95th percentile MAE: {np.percentile(sample_mae_clean, 95):.6f}")
++    print(f"   Samples with very high MAE (extreme outliers): {mae_extreme_outliers} ({mae_extreme_outliers/len(sample_mae_clean)*100:.1f}%)")
++    print(f"   Samples with MAE < 1.0: {np.sum(sample_mae_clean < 1.0)} ({np.sum(sample_mae_clean < 1.0)/len(sample_mae_clean)*100:.1f}%)")
++    print(f"   Samples with MAE < 0.5: {np.sum(sample_mae_clean < 0.5)} ({np.sum(sample_mae_clean < 0.5)/len(sample_mae_clean)*100:.1f}%)")
++    
++    # R² outlier analysis
+     extreme_negative_count = np.sum(feature_r2_clean < -10)
+-    print(f"\n📊 R² Distribution Analysis:")
++    print(f"\n📊 Feature R² Distribution Analysis:")
+     print(f"   Median R²: {np.median(feature_r2_clean):.3f}")
+     print(f"   75th percentile R²: {np.percentile(feature_r2_clean, 75):.3f}")
+     print(f"   90th percentile R²: {np.percentile(feature_r2_clean, 90):.3f}")
+@@ -122,10 +149,16 @@ def compute_reconstruction_metrics(model: JUMPVAE, dataloader: DataLoader, devic
+     metrics = {
+         'original': original,
+         'reconstructed': reconstructed,
++        'original_norm': original_norm,
++        'reconstructed_norm': reconstructed_norm,
+         'latent': latent,
+         'sample_mae': sample_mae,
+         'feature_r2': feature_r2,
+         'mean_sample_mae': np.nanmean(sample_mae),
++        'median_sample_mae': np.median(sample_mae_clean),
++        'percentile_75_sample_mae': np.percentile(sample_mae_clean, 75),
++        'percentile_95_sample_mae': np.percentile(sample_mae_clean, 95),
++        'mae_extreme_outliers_count': mae_extreme_outliers,
+         'mean_feature_r2': np.nanmean(feature_r2),
+         'median_feature_r2': np.median(feature_r2_clean),
+         'percentile_75_feature_r2': np.percentile(feature_r2_clean, 75),
+@@ -138,83 +171,72 @@ def compute_reconstruction_metrics(model: JUMPVAE, dataloader: DataLoader, devic
+ 
+ 
+ def plot_reconstruction_quality(metrics: dict, save_path: str = None):
+-    """Reconstruction quality plots: Sample MAE (zoomed), Feature R² distribution (zoomed), and reconstruction scatterplot."""
++    """Reconstruction quality plots: Sample MAE (zoomed) and Feature R² distribution (zoomed)."""
+     
+     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+     
+-    # 1. Sample-wise MAE distribution (ZOOMED to 0-50 range)
+-    axes[0, 0].hist(metrics['sample_mae'], bins=50, alpha=0.7, edgecolor='black', color='skyblue')
+-    axes[0, 0].axvline(metrics['mean_sample_mae'], color='red', linestyle='--', linewidth=2,
+-                       label=f'Mean: {metrics["mean_sample_mae"]:.4f}')
++    # 1. Sample-wise MAE distribution (ZOOMED to 0-50 range with bin size 1)
++    mae_in_range = metrics['sample_mae'][(metrics['sample_mae'] >= 0) & (metrics['sample_mae'] <= 50)]
++    total_samples = len(metrics['sample_mae'])
++    shown_samples = len(mae_in_range)
++    
++    axes[0, 0].hist(mae_in_range, bins=range(0, 51, 1), alpha=0.7, edgecolor='black', color='skyblue')
++    axes[0, 0].axvline(metrics['median_sample_mae'], color='green', linestyle='--', linewidth=2,
++                       label=f'Median: {metrics["median_sample_mae"]:.4f}')
++    axes[0, 0].axvline(metrics['percentile_75_sample_mae'], color='orange', linestyle='--', linewidth=2,
++                       label=f'75th %ile: {metrics["percentile_75_sample_mae"]:.4f}')
+     axes[0, 0].set_xlabel('Sample MAE (Original Space)')
+     axes[0, 0].set_ylabel('Frequency')
+-    axes[0, 0].set_title('Sample-wise MAE Distribution (Zoomed 0-50)')
++    axes[0, 0].set_title(f'Sample-wise MAE Distribution\n({shown_samples:,} of {total_samples:,} samples shown, range 0-50)')
+     axes[0, 0].set_xlim(0, 50)  # Zoom to 0-50 range
+     axes[0, 0].legend()
+     axes[0, 0].grid(True, alpha=0.3)
+     
+-    # 2. Feature-wise R² distribution (ZOOMED to reasonable range) - moved from position [1,0]
++    # 2. Feature-wise R² distribution (ZOOMED to -1 to 1 range)
+     valid_feature_r2 = metrics['feature_r2'][~np.isnan(metrics['feature_r2'])]
+-    reasonable_r2 = valid_feature_r2[valid_feature_r2 > -10]  # Remove extreme outliers
+-    axes[0, 1].hist(reasonable_r2, bins=50, alpha=0.7, edgecolor='black', color='lightgreen')
+-    axes[0, 1].axvline(np.median(reasonable_r2), color='green', linestyle='--', linewidth=2,
+-                       label=f'Median: {np.median(reasonable_r2):.3f}')
+-    axes[0, 1].axvline(np.percentile(reasonable_r2, 75), color='orange', linestyle='--', linewidth=2,
+-                       label=f'75th %ile: {np.percentile(reasonable_r2, 75):.3f}')
++    r2_in_range = valid_feature_r2[(valid_feature_r2 >= -1) & (valid_feature_r2 <= 1)]
++    total_features = len(valid_feature_r2)
++    shown_features = len(r2_in_range)
++    
++    axes[0, 1].hist(r2_in_range, bins=50, alpha=0.7, edgecolor='black', color='lightgreen')
++    axes[0, 1].axvline(np.median(r2_in_range), color='green', linestyle='--', linewidth=2,
++                       label=f'Median: {np.median(r2_in_range):.3f}')
++    axes[0, 1].axvline(np.percentile(r2_in_range, 75), color='orange', linestyle='--', linewidth=2,
++                       label=f'75th %ile: {np.percentile(r2_in_range, 75):.3f}')
+     axes[0, 1].set_xlabel('Feature R² (Original Space)')
+     axes[0, 1].set_ylabel('Frequency')
+-    axes[0, 1].set_title(f'Feature R² Distribution ({len(reasonable_r2)}/{len(valid_feature_r2)} features, R² > -10)')
++    axes[0, 1].set_title(f'Feature R² Distribution\n({shown_features:,} of {total_features:,} features shown, range -1 to 1)')
++    axes[0, 1].set_xlim(-1, 1)  # Zoom to -1 to 1 range
+     axes[0, 1].legend()
+     axes[0, 1].grid(True, alpha=0.3)
+     
+-    # 3. Reconstruction scatterplot - subsample for visualization
+-    orig_flat = metrics['original'].flatten()
+-    recon_flat = metrics['reconstructed'].flatten()
++    # 3. Reconstruction density plot - using normalized features
++    orig_norm_flat = metrics['original_norm'].flatten()
++    recon_norm_flat = metrics['reconstructed_norm'].flatten()
+     
+     # Remove any NaN or infinite values
+-    valid_mask = np.isfinite(orig_flat) & np.isfinite(recon_flat)
+-    orig_flat = orig_flat[valid_mask]
+-    recon_flat = recon_flat[valid_mask]
+-    
+-    # Subsample for better visualization (use every 100th point if dataset is large)
+-    if len(orig_flat) > 10000:
+-        subsample_idx = np.arange(0, len(orig_flat), len(orig_flat)//10000)
+-        orig_sample = orig_flat[subsample_idx]
+-        recon_sample = recon_flat[subsample_idx]
+-    else:
+-        orig_sample = orig_flat
+-        recon_sample = recon_flat
+-    
+-    axes[1, 0].scatter(orig_sample, recon_sample, alpha=0.5, s=1, color='blue')
+-    axes[1, 0].plot([orig_sample.min(), orig_sample.max()], [orig_sample.min(), orig_sample.max()], 
++    valid_mask = np.isfinite(orig_norm_flat) & np.isfinite(recon_norm_flat)
++    orig_norm_flat = orig_norm_flat[valid_mask]
++    recon_norm_flat = recon_norm_flat[valid_mask]
++    
++    # Use all points, not subsampled - create density plot with log scale
++    hb = axes[1, 0].hexbin(orig_norm_flat, recon_norm_flat, gridsize=75, cmap='viridis', 
++                           mincnt=1, norm=LogNorm())
++    axes[1, 0].plot([orig_norm_flat.min(), orig_norm_flat.max()], 
++                    [orig_norm_flat.min(), orig_norm_flat.max()], 
+                     'r--', linewidth=2, label='Perfect Reconstruction')
+-    axes[1, 0].set_xlabel('Original Feature Values')
+-    axes[1, 0].set_ylabel('Reconstructed Feature Values')
+-    axes[1, 0].set_title(f'Reconstruction Scatterplot\n(Subsample: {len(orig_sample):,} points)')
++    axes[1, 0].set_xlabel('Original Normalized Feature Values')
++    axes[1, 0].set_ylabel('Reconstructed Normalized Feature Values')
++    axes[1, 0].set_title(f'Reconstruction Density Plot (Normalized Space)\n({len(orig_norm_flat):,} points)')
+     axes[1, 0].legend()
+     axes[1, 0].grid(True, alpha=0.3)
+     
+-    # 4. Feature correlation plot - show correlation between original and reconstructed per feature
+-    feature_corr = []
+-    for j in range(metrics['original'].shape[1]):
+-        orig_feature = metrics['original'][:, j]
+-        recon_feature = metrics['reconstructed'][:, j]
+-        if np.var(orig_feature) > 1e-10 and np.var(recon_feature) > 1e-10:
+-            corr = np.corrcoef(orig_feature, recon_feature)[0, 1]
+-            if np.isfinite(corr):
+-                feature_corr.append(corr)
+-    
+-    feature_corr = np.array(feature_corr)
+-    axes[1, 1].hist(feature_corr, bins=50, alpha=0.7, edgecolor='black', color='lightcoral')
+-    axes[1, 1].axvline(np.mean(feature_corr), color='red', linestyle='--', linewidth=2,
+-                       label=f'Mean: {np.mean(feature_corr):.3f}')
+-    axes[1, 1].axvline(np.median(feature_corr), color='green', linestyle='--', linewidth=2,
+-                       label=f'Median: {np.median(feature_corr):.3f}')
+-    axes[1, 1].set_xlabel('Feature Correlation (Original vs Reconstructed)')
+-    axes[1, 1].set_ylabel('Frequency')
+-    axes[1, 1].set_title(f'Feature-wise Correlation Distribution\n({len(feature_corr)} features)')
+-    axes[1, 1].legend()
+-    axes[1, 1].grid(True, alpha=0.3)
++    # Add colorbar with log scale
++    cbar = plt.colorbar(hb, ax=axes[1, 0])
++    cbar.set_label('Point Density (log scale)', rotation=270, labelpad=15)
++    
++    # 4. Remove the bottom-right plot (keep it empty)
++    axes[1, 1].remove()
+     
+     plt.tight_layout()
+     
+@@ -226,118 +248,71 @@ def plot_reconstruction_quality(metrics: dict, save_path: str = None):
+ 
+ 
+ def analyze_latent_space(metrics: dict, save_path: str = None):
+-    """Analyze the learned latent space with reconstruction error coloring."""
++    """Analyze the learned latent space with percentile-based reconstruction error coloring."""
+     latent = metrics['latent']
+     sample_mae = metrics['sample_mae']
+     
+-    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
++    # Convert MAE to percentiles for better color distribution (handles outliers)
++    mae_percentiles = (rankdata(sample_mae) - 1) / (len(sample_mae) - 1) * 100
++    
++    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+     
+-    # PCA on latent space colored by reconstruction error
++    # PCA on latent space colored by MAE percentiles
+     pca = PCA(n_components=2, random_state=42)
+     latent_pca = pca.fit_transform(latent)
+     
+-    scatter1 = axes[0, 0].scatter(latent_pca[:, 0], latent_pca[:, 1], 
+-                                 c=sample_mae, cmap='viridis', alpha=0.7, s=20)
+-    axes[0, 0].set_xlabel(f'PC1 ({pca.explained_variance_ratio_[0]:.3f})')
+-    axes[0, 0].set_ylabel(f'PC2 ({pca.explained_variance_ratio_[1]:.3f})')
+-    axes[0, 0].set_title('PCA - Colored by Reconstruction Error')
+-    axes[0, 0].grid(True, alpha=0.3)
+-    plt.colorbar(scatter1, ax=axes[0, 0], label='Sample MAE')
++    scatter1 = axes[0].scatter(latent_pca[:, 0], latent_pca[:, 1], 
++                              c=mae_percentiles, cmap='viridis', alpha=0.7, s=20)
++    axes[0].set_xlabel(f'PC1 ({pca.explained_variance_ratio_[0]:.3f})')
++    axes[0].set_ylabel(f'PC2 ({pca.explained_variance_ratio_[1]:.3f})')
++    axes[0].set_title('PCA - Colored by MAE Percentile')
++    axes[0].grid(True, alpha=0.3)
++    cbar1 = plt.colorbar(scatter1, ax=axes[0])
++    cbar1.set_label('MAE Percentile (%)', rotation=270, labelpad=15)
+     
+-    # t-SNE on latent space colored by reconstruction error (subsample for efficiency)
++    # t-SNE on latent space colored by MAE percentiles (subsample for efficiency)
+     if len(latent) > 5000:
+         idx = np.random.choice(len(latent), 5000, replace=False)
+         latent_subset = latent[idx]
+-        mae_subset = sample_mae[idx]
++        mae_percentiles_subset = mae_percentiles[idx]
+     else:
+         latent_subset = latent
+-        mae_subset = sample_mae
++        mae_percentiles_subset = mae_percentiles
+         idx = np.arange(len(latent))
+     
+     tsne = TSNE(n_components=2, random_state=42, perplexity=min(30, len(latent_subset)-1))
+     latent_tsne = tsne.fit_transform(latent_subset)
+     
+-    scatter2 = axes[0, 1].scatter(latent_tsne[:, 0], latent_tsne[:, 1], 
+-                                 c=mae_subset, cmap='viridis', alpha=0.7, s=20)
+-    axes[0, 1].set_xlabel('t-SNE 1')
+-    axes[0, 1].set_ylabel('t-SNE 2')
+-    axes[0, 1].set_title('t-SNE - Colored by Reconstruction Error')
+-    axes[0, 1].grid(True, alpha=0.3)
+-    plt.colorbar(scatter2, ax=axes[0, 1], label='Sample MAE')
+-    
+-    # Latent dimension statistics
+-    latent_means = np.mean(latent, axis=0)
+-    latent_stds = np.std(latent, axis=0)
+-    
+-    axes[0, 2].plot(latent_means, label='Mean', color='blue', linewidth=2)
+-    axes[0, 2].plot(latent_stds, label='Std', color='orange', linewidth=2)
+-    axes[0, 2].set_xlabel('Latent Dimension')
+-    axes[0, 2].set_ylabel('Value')
+-    axes[0, 2].set_title('Latent Dimension Statistics')
+-    axes[0, 2].legend()
+-    axes[0, 2].grid(True, alpha=0.3)
+-    
+-    # Reconstruction error vs latent magnitude
+-    latent_norms = np.linalg.norm(latent, axis=1)
+-    axes[1, 0].scatter(latent_norms, sample_mae, alpha=0.6, s=10)
+-    axes[1, 0].set_xlabel('Latent Vector Magnitude')
+-    axes[1, 0].set_ylabel('Sample MAE')
+-    axes[1, 0].set_title('Reconstruction Error vs Latent Magnitude')
+-    axes[1, 0].grid(True, alpha=0.3)
+-    
+-    # Clustering analysis
+-    n_clusters_range = range(2, min(11, len(latent)//10 + 2))  # Ensure reasonable cluster range
+-    silhouette_scores = []
+-    
+-    for n_clusters in n_clusters_range:
+-        if n_clusters < len(latent):
+-            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+-            cluster_labels = kmeans.fit_predict(latent)
+-            silhouette_avg = silhouette_score(latent, cluster_labels)
+-            silhouette_scores.append(silhouette_avg)
+-        else:
+-            silhouette_scores.append(0)
+-    
+-    if silhouette_scores:
+-        axes[1, 1].plot(n_clusters_range, silhouette_scores, 'o-', linewidth=2, markersize=6)
+-        axes[1, 1].set_xlabel('Number of Clusters')
+-        axes[1, 1].set_ylabel('Silhouette Score')
+-        axes[1, 1].set_title('Clustering Quality in Latent Space')
+-        axes[1, 1].grid(True, alpha=0.3)
+-        
+-        # Best clustering result
+-        best_n_clusters = n_clusters_range[np.argmax(silhouette_scores)]
+-        best_silhouette_score = max(silhouette_scores)
+-    else:
+-        axes[1, 1].text(0.5, 0.5, 'Insufficient data for clustering', 
+-                       ha='center', va='center', transform=axes[1, 1].transAxes)
+-        best_n_clusters = 2
+-        best_silhouette_score = 0
+-    
+-    # Latent space distribution (show actual values distribution)
+-    latent_flat = latent.flatten()
+-    axes[1, 2].hist(latent_flat, bins=50, alpha=0.7, edgecolor='black', color='lightcoral')
+-    axes[1, 2].axvline(np.mean(latent_flat), color='red', linestyle='--', linewidth=2,
+-                      label=f'Mean: {np.mean(latent_flat):.3f}')
+-    axes[1, 2].set_xlabel('Latent Values')
+-    axes[1, 2].set_ylabel('Frequency')
+-    axes[1, 2].set_title('Latent Space Value Distribution')
+-    axes[1, 2].legend()
+-    axes[1, 2].grid(True, alpha=0.3)
++    scatter2 = axes[1].scatter(latent_tsne[:, 0], latent_tsne[:, 1], 
++                              c=mae_percentiles_subset, cmap='viridis', alpha=0.7, s=20)
++    axes[1].set_xlabel('t-SNE 1')
++    axes[1].set_ylabel('t-SNE 2')
++    axes[1].set_title('t-SNE - Colored by MAE Percentile')
++    axes[1].grid(True, alpha=0.3)
++    cbar2 = plt.colorbar(scatter2, ax=axes[1])
++    cbar2.set_label('MAE Percentile (%)', rotation=270, labelpad=15)
+     
+     plt.tight_layout()
+     
+     if save_path:
+         plt.savefig(save_path, dpi=300, bbox_inches='tight')
+-        print(f"Clean latent space analysis plot saved to: {save_path}")
++        print(f"Simplified latent space analysis plot saved to: {save_path}")
+     
+     plt.show()
+     
++    # Print percentile information for context
++    print(f"\n📊 MAE Percentile Analysis:")
++    print(f"   50th percentile (median): {np.percentile(sample_mae, 50):.6f}")
++    print(f"   75th percentile: {np.percentile(sample_mae, 75):.6f}")
++    print(f"   90th percentile: {np.percentile(sample_mae, 90):.6f}")
++    print(f"   95th percentile: {np.percentile(sample_mae, 95):.6f}")
++    print(f"   99th percentile: {np.percentile(sample_mae, 99):.6f}")
++    
+     return {
+-        'best_n_clusters': best_n_clusters,
+-        'best_silhouette_score': best_silhouette_score,
+         'pca_explained_variance': pca.explained_variance_ratio_[:2],
+-        'latent_magnitude_correlation': np.corrcoef(latent_norms, sample_mae)[0, 1] if len(latent_norms) > 1 else 0
++        'mae_percentile_50': np.percentile(sample_mae, 50),
++        'mae_percentile_75': np.percentile(sample_mae, 75),
++        'mae_percentile_95': np.percentile(sample_mae, 95),
+     }
+ 
+ 
+@@ -371,6 +346,8 @@ def generate_report(model: JUMPVAE, metrics: dict, latent_analysis: dict, save_p
+ 
+ ### Sample-wise Performance
+ - Mean MAE: {metrics['mean_sample_mae']:.6f} ± {metrics['std_sample_mae']:.6f}
++- **Median MAE (robust)**: {metrics['median_sample_mae']:.6f}
++- **75th percentile MAE**: {metrics['percentile_75_sample_mae']:.6f}
+ - Number of samples: {len(metrics['sample_mae']):,}
+ 
+ ### Feature-wise Performance  
+@@ -385,15 +362,22 @@ def generate_report(model: JUMPVAE, metrics: dict, latent_analysis: dict, save_p
+ - Features with poor reconstruction (R² < 0.5): {poor_r2} / {len(feature_r2_clean)} ({poor_r2/len(feature_r2_clean)*100:.1f}%)
+ 
+ ### ⚠️ Mean vs. Median Discrepancy Analysis
++
++#### MAE Outlier Analysis
++- **Samples with extreme high MAE**: {metrics['mae_extreme_outliers_count']} / {len(metrics['sample_mae'])} ({metrics['mae_extreme_outliers_count']/len(metrics['sample_mae'])*100:.1f}%)
++- **Recommendation**: Focus on median MAE ({metrics['median_sample_mae']:.6f}) as it's more representative of typical performance
++
++#### R² Outlier Analysis
+ - **Features with extreme negative R² (< -10)**: {extreme_negative_count} / {len(feature_r2_clean)} ({extreme_negative_count/len(feature_r2_clean)*100:.1f}%)
+ - **Note**: The very negative mean R² is caused by {extreme_negative_count} features with extreme outlier values
+ - **Recommendation**: Focus on median R² ({median_r2:.3f}) as it's more representative of typical performance
+ 
+ ## Latent Space Analysis
+-- Best number of clusters: {latent_analysis['best_n_clusters']}
+-- Best silhouette score: {latent_analysis['best_silhouette_score']:.4f}
+ - PCA explained variance (PC1, PC2): {latent_analysis['pca_explained_variance'][0]:.4f}, {latent_analysis['pca_explained_variance'][1]:.4f}
+-- Latent magnitude vs reconstruction error correlation: {latent_analysis['latent_magnitude_correlation']:.4f}
++- MAE percentiles for color scale:
++  - 50th percentile (median): {latent_analysis['mae_percentile_50']:.6f}
++  - 75th percentile: {latent_analysis['mae_percentile_75']:.6f}
++  - 95th percentile: {latent_analysis['mae_percentile_95']:.6f}
+ 
+ ## Model Parameters
+ - Total parameters: {sum(p.numel() for p in model.parameters()):,}
+@@ -402,13 +386,14 @@ def generate_report(model: JUMPVAE, metrics: dict, latent_analysis: dict, save_p
+ ## Performance Assessment
+ """
+     
+-    # Add performance-based recommendations
+-    if metrics['mean_sample_mae'] < 1.0:
+-        report += "- Low reconstruction error in original space\n"
+-    elif metrics['mean_sample_mae'] < 5.0:
+-        report += "- Moderate reconstruction error in original space\n"
++    # Add performance-based recommendations (using robust median)
++    median_mae = metrics['median_sample_mae']
++    if median_mae < 1.0:
++        report += f"- Low reconstruction error in original space (Median MAE = {median_mae:.6f} < 1.0)\n"
++    elif median_mae < 5.0:
++        report += f"- Moderate reconstruction error in original space (Median MAE = {median_mae:.6f} < 5.0)\n"
+     else:
+-        report += "- High reconstruction error - model may need more capacity or training\n"
++        report += f"- High reconstruction error - model may need more capacity or training (Median MAE = {median_mae:.6f})\n"
+     
+     # Use median R² for performance assessment (more robust than mean)
+     if median_r2 > 0.8:
+@@ -420,7 +405,10 @@ def generate_report(model: JUMPVAE, metrics: dict, latent_analysis: dict, save_p
+     else:
+         report += f"- Poor feature reconstruction (Median R² = {median_r2:.3f}) - consider model improvements\n"
+     
+-    # Additional note about mean vs median
++    # Additional notes about mean vs median discrepancies
++    if metrics['mae_extreme_outliers_count'] > 0:
++        report += f"- **Note**: Mean MAE ({metrics['mean_sample_mae']:.6f}) is misleading due to {metrics['mae_extreme_outliers_count']} extreme outliers\n"
++    
+     if extreme_negative_count > 0:
+         report += f"- **Note**: Mean R² ({metrics['mean_feature_r2']:.3f}) is misleading due to {extreme_negative_count} extreme outliers\n"
+     
+@@ -431,20 +419,19 @@ def generate_report(model: JUMPVAE, metrics: dict, latent_analysis: dict, save_p
+     else:
+         report += "- Feature reconstruction quality varies significantly\n"
+     
+-    if latent_analysis['best_silhouette_score'] > 0.5:
+-        report += "- Latent space shows good clustering structure\n"
+-    elif latent_analysis['best_silhouette_score'] > 0.2:
+-        report += "- Latent space shows moderate clustering structure\n"
++    # Simplified latent space assessment based on percentile distribution
++    mae_range = latent_analysis['mae_percentile_95'] - latent_analysis['mae_percentile_50']
++    if mae_range < latent_analysis['mae_percentile_50']:
++        report += "- Good reconstruction consistency across latent space (narrow MAE range)\n"
+     else:
+-        report += "- Latent space shows poor clustering - consider different architectures\n"
++        report += "- Reconstruction quality varies significantly across latent space\n"
+     
+-    abs_correlation = abs(latent_analysis['latent_magnitude_correlation'])
+-    if abs_correlation > 0.5:
+-        report += f"- Strong correlation ({latent_analysis['latent_magnitude_correlation']:.3f}) between latent magnitude and reconstruction error\n"
+-    elif abs_correlation > 0.2:
+-        report += f"- Moderate correlation ({latent_analysis['latent_magnitude_correlation']:.3f}) between latent magnitude and reconstruction error\n"
++    # PCA variance assessment
++    total_pca_variance = sum(latent_analysis['pca_explained_variance'])
++    if total_pca_variance > 0.5:
++        report += f"- First 2 PCA components capture {total_pca_variance:.1%} of latent variance\n"
+     else:
+-        report += "- Weak correlation between latent magnitude and reconstruction error\n"
++        report += f"- Latent space is high-dimensional (first 2 PCs: {total_pca_variance:.1%})\n"
+     
+     if save_path:
+         with open(save_path, 'w') as f:
+diff --git a/evaluation_results/evaluation_report.md b/evaluation_results/evaluation_report.md
+deleted file mode 100644
+index 9ca156f..0000000
+--- a/evaluation_results/evaluation_report.md
++++ /dev/null
+@@ -1,47 +0,0 @@
+-
+-# VAE Model Evaluation Report
+-
+-## Model Architecture
+-- Input Dimension: 4709
+-- Latent Dimension: 128
+-- Encoder Hidden Dims: [512, 256]
+-- Decoder Hidden Dims: [256, 512]
+-- Dropout: 0.1
+-- Normalization: batchnorm
+-- Beta (KL weight): 1.0
+-
+-## Reconstruction Metrics
+-
+-### Normalized Space (Training Space)
+-- Mean MAE: 0.414468 ± 0.455824
+-- Mean MSE: 0.765085 ± 2.980052
+-- Number of samples: 100
+-
+-### Original Space (Interpretable Units)
+-- Mean MAE: 41.126389 ± 80.055878
+-- Mean MSE: 953548.187500 ± 5271770.500000
+-
+-### Interpretation Notes
+-- **Normalized Space**: Reflects what the model actually optimized for during training
+-- **Original Space**: Shows reconstruction quality in original measurement units
+-- **Ratio (Orig/Norm)**: MAE ratio = 99.23, MSE ratio = 1246329.50
+-
+-## Latent Space Analysis
+-- Best number of clusters: 2
+-- Best silhouette score: 0.8891
+-- PCA explained variance (PC1, PC2): 0.8062, 0.1277
+-
+-## Feature Reconstruction Quality
+-- Features with excellent reconstruction (correlation > 0.9): 911 / 4707
+-- Features with good reconstruction (correlation > 0.8): 2253 / 4707
+-- Features with poor reconstruction (correlation < 0.5): 1098 / 4707
+-- Mean correlation in Original space: 0.6438
+-
+-## Model Parameters
+-- Total parameters: 5,159,141
+-- Trainable parameters: 5,159,141
+-
+-## Recommendations
+-- High error ratio suggests normalization is crucial for this dataset
+-- Consider improving model architecture or increasing training
+-- Latent space shows good clustering structure
+diff --git a/evaluation_results/latent_space_analysis.png b/evaluation_results/latent_space_analysis.png
+deleted file mode 100644
+index 82a0770..0000000
+Binary files a/evaluation_results/latent_space_analysis.png and /dev/null differ
+diff --git a/evaluation_results/metrics.npz b/evaluation_results/metrics.npz
+deleted file mode 100644
+index e3f37da..0000000
+Binary files a/evaluation_results/metrics.npz and /dev/null differ
+diff --git a/evaluation_results/reconstruction_quality.png b/evaluation_results/reconstruction_quality.png
+deleted file mode 100644
+index 60d0bde..0000000
+Binary files a/evaluation_results/reconstruction_quality.png and /dev/null differ
+diff --git a/mocop/__pycache__/dataset.cpython-38.pyc b/mocop/__pycache__/dataset.cpython-38.pyc
+index 2a97d9d..2ed1025 100644
+Binary files a/mocop/__pycache__/dataset.cpython-38.pyc and b/mocop/__pycache__/dataset.cpython-38.pyc differ
+diff --git a/mocop/__pycache__/layers.cpython-38.pyc b/mocop/__pycache__/layers.cpython-38.pyc
+index ea0666f..281b8e4 100644
+Binary files a/mocop/__pycache__/layers.cpython-38.pyc and b/mocop/__pycache__/layers.cpython-38.pyc differ
+diff --git a/mocop/__pycache__/metrics.cpython-38.pyc b/mocop/__pycache__/metrics.cpython-38.pyc
+index 5f1a4cf..cdf36f6 100644
+Binary files a/mocop/__pycache__/metrics.cpython-38.pyc and b/mocop/__pycache__/metrics.cpython-38.pyc differ
+diff --git a/mocop/__pycache__/model.cpython-38.pyc b/mocop/__pycache__/model.cpython-38.pyc
+index ef5e3eb..f294d94 100644
+Binary files a/mocop/__pycache__/model.cpython-38.pyc and b/mocop/__pycache__/model.cpython-38.pyc differ
+diff --git a/mocop/__pycache__/steps.cpython-38.pyc b/mocop/__pycache__/steps.cpython-38.pyc
+index cd285af..b4eca53 100644
+Binary files a/mocop/__pycache__/steps.cpython-38.pyc and b/mocop/__pycache__/steps.cpython-38.pyc differ
+diff --git a/mocop/__pycache__/testing.cpython-38.pyc b/mocop/__pycache__/testing.cpython-38.pyc
+index 7eab51d..86cbebc 100644
+Binary files a/mocop/__pycache__/testing.cpython-38.pyc and b/mocop/__pycache__/testing.cpython-38.pyc differ
+diff --git a/mocop/__pycache__/training.cpython-38.pyc b/mocop/__pycache__/training.cpython-38.pyc
+index 0369921..5ee3051 100644
+Binary files a/mocop/__pycache__/training.cpython-38.pyc and b/mocop/__pycache__/training.cpython-38.pyc differ
+diff --git a/mocop/dataset.py b/mocop/dataset.py
+index d50c04c..5a6ab5a 100644
+--- a/mocop/dataset.py
++++ b/mocop/dataset.py
+@@ -9,12 +9,16 @@ import torch.nn.functional as F
+ from torch.utils.data import Dataset, Subset
+ from rdkit import Chem
+ 
++from rdkit import RDLogger  
++RDLogger.DisableLog('rdApp.*')
++
+ from featurizer.smiles_transformation import (inchi2smiles, smiles2fp,
+                                               smiles2graph)
++import deepchem as dc
+ 
+ class SupervisedGraphDataset(Dataset):
+     def __init__(
+-        self, data_path, cmpd_col="smiles", cmpd_col_is_inchikey=False, pad_length=0
++        self, data_path, cmpd_col="smiles", label_col=None, cmpd_col_is_inchikey=False, pad_length=0
+     ):
+         if "parquet" in data_path:
+             self.df = pd.read_parquet(data_path)
+@@ -24,9 +28,23 @@ class SupervisedGraphDataset(Dataset):
+         self.df = self.df.set_index(cmpd_col)
+         if cmpd_col_is_inchikey:
+             self.df.index = [inchi2smiles(s) for s in self.df.index]
+-        self.df = self.df[[c for c in self.df.columns if not c.startswith("Metadata")]]
++        if label_col is None:
++            self.df = self.df[[c for c in self.df.columns if not c.startswith("Metadata")]]
++        else:
++            # Keep only the specified label column(s)
++            if isinstance(label_col, str):
++                label_col = [label_col]  # Convert to list for consistent handling
++            self.df = self.df[label_col]
++            
++            print(f"Dataset loaded with specific label columns: {label_col}")
++            for col in label_col:
++                print(f"{col} distribution:")
++                print(self.df[col].value_counts().sort_index())
++        
+         self.unique_smiles = self.df.index
+         self.pad_length = pad_length
++        print(f"Total compounds with valid SMILES: {len(self.unique_smiles)}")
++
+ 
+     def __len__(self):
+         return len(self.unique_smiles)
+@@ -345,43 +363,52 @@ class CellLineTripleInputGraphDatasetJUMP(DualInputGraphDatasetJUMP):
+         morph_feat = (self.df[morph_mask].sample(1, random_state=rng)[self.morph_cols].values.astype(float).flatten() 
+                      if morph_mask.any() else -1 * np.ones(len(self.morph_cols)))
+         
+-        # Initialize tensors for all cell lines
+-        n_cell_lines = len(self.cell_line_to_idx)
+-        n_features = len(self.genomic_cols)
++        # Get only valid genomic conditions for this SMILES
++        valid_genomic_data = []
++        valid_cell_indices = []
++        valid_doses = []
++        valid_times = []
+         
+-        # Initialize with padding values (0)
+-        cell_features = -1 * np.ones((n_cell_lines, n_features))
+-        cell_indices = np.zeros(n_cell_lines)  # 0 indicates missing/padding
+-        doses = np.zeros(n_cell_lines)  # 0 indicates padding
+-        times = np.zeros(n_cell_lines)  # 0 indicates padding
+-        
+-        # Fill in available data
+         smiles_mask = self.genomic_df[self.smiles_col] == smiles
+         if smiles_mask.any():
+             for cell_line in self.genomic_df[smiles_mask][self.cell_line_col].unique():
+                 cell_idx = self.cell_line_to_idx[cell_line]
+-                array_idx = cell_idx - 1
+                 mask = smiles_mask & (self.genomic_df[self.cell_line_col] == cell_line)
+                 if mask.any():
+                     # Pass the dedicated generator to the sampling method here as well
+                     sampled_row = self.genomic_df[mask].sample(1, random_state=rng)
+-                    cell_features[array_idx] = sampled_row[self.genomic_cols].values
+-                    cell_indices[array_idx] = cell_idx
++                    
++                    # Only include valid data
++                    valid_genomic_data.append(sampled_row[self.genomic_cols].values.flatten())
++                    valid_cell_indices.append(cell_idx)
+                     
+                     # Convert actual values to indices
+                     dose_value = sampled_row['Metadata_Dose_Level'].values[0]
+                     time_value = sampled_row['Metadata_pert_time'].values[0]
+-                    doses[array_idx] = self.dose_to_idx[dose_value]  # e.g., 2 -> 1, 5 -> 2, etc.
+-                    times[array_idx] = self.time_to_idx[time_value]  # e.g., 6 -> 1, 24 -> 2
++                    valid_doses.append(self.dose_to_idx[dose_value])
++                    valid_times.append(self.time_to_idx[time_value])
++        
++        # Convert to tensors (empty if no valid data)
++        if valid_genomic_data:
++            genomic_features = torch.FloatTensor(np.array(valid_genomic_data))  # [n_valid_conditions, n_features]
++            cell_indices = torch.LongTensor(valid_cell_indices)  # [n_valid_conditions]
++            doses = torch.FloatTensor(valid_doses)  # [n_valid_conditions]
++            times = torch.FloatTensor(valid_times)  # [n_valid_conditions]
++        else:
++            # No valid genomic data - return empty tensors
++            genomic_features = torch.empty(0, len(self.genomic_cols))
++            cell_indices = torch.empty(0, dtype=torch.long)
++            doses = torch.empty(0)
++            times = torch.empty(0)
+         
+         return {
+             "inputs": {
+                 "x_a": [torch.FloatTensor(f) for f in cmpd_feat],
+                 "x_b": torch.FloatTensor(morph_feat),
+-                "x_c": torch.FloatTensor(cell_features),  # [n_cell_lines, n_features]
+-                "cell_indices": torch.LongTensor(cell_indices),  # [n_cell_lines], 0 = padding
+-                "doses": torch.FloatTensor(doses),  # Add doses for each cell line
+-                "times": torch.FloatTensor(times)   # Add times for each cell line
++                "x_c": genomic_features,  # [n_valid_conditions, n_features] - variable length
++                "cell_indices": cell_indices,  # [n_valid_conditions] - variable length
++                "doses": doses,  # [n_valid_conditions] - variable length
++                "times": times   # [n_valid_conditions] - variable length
+             },
+             "labels": torch.Tensor([-1])
+         }
+@@ -389,16 +416,16 @@ class CellLineTripleInputGraphDatasetJUMP(DualInputGraphDatasetJUMP):
+     def collate_fn(self, batch):
+         """Collate function for DataLoader.
+         
+-        Handles batching of variable-length cell line data by:
+-        1. Padding to maximum number of possible cell lines
+-        2. Using 0 to indicate padding/missing data
++        Handles batching of variable-length genomic data by:
++        1. Concatenating all valid genomic conditions across the batch
++        2. Creating batch indices to track which conditions belong to which sample
+         
+         Args:
+             batch (list): List of items from __getitem__
+             
+         Returns:
+             dict: Contains:
+-                - inputs: Dict with batched x_a, x_b, x_c features, cell_indices, doses, and times
++                - inputs: Dict with batched x_a, x_b, genomic data, and batch indices
+                 - labels: Batched labels
+         """
+         # Stack molecular features
+@@ -411,38 +438,166 @@ class CellLineTripleInputGraphDatasetJUMP(DualInputGraphDatasetJUMP):
+         x_b_batch = torch.stack([item["inputs"]["x_b"] for item in batch])
+         labels_batch = torch.stack([item["labels"] for item in batch])
+         
+-        # Stack genomic features and cell indices
+-        x_c_batch = torch.stack([item["inputs"]["x_c"] for item in batch])
+-        cell_indices_batch = torch.stack([item["inputs"]["cell_indices"] for item in batch])
++        # Handle variable-length genomic data
++        all_genomic_features = []
++        all_cell_indices = []
++        all_doses = []
++        all_times = []
++        batch_indices = []  # Track which sample each condition belongs to
+         
+-        # Stack doses and times
+-        doses_batch = torch.stack([item["inputs"]["doses"] for item in batch])
+-        times_batch = torch.stack([item["inputs"]["times"] for item in batch])
++        for batch_idx, item in enumerate(batch):
++            genomic_features = item["inputs"]["x_c"]
++            if len(genomic_features) > 0:  # If this sample has valid genomic data
++                all_genomic_features.append(genomic_features)
++                all_cell_indices.append(item["inputs"]["cell_indices"])
++                all_doses.append(item["inputs"]["doses"])
++                all_times.append(item["inputs"]["times"])
++                
++                # Create batch indices for this sample's conditions
++                n_conditions = len(genomic_features)
++                batch_indices.extend([batch_idx] * n_conditions)
++        
++        # Concatenate all genomic data if any exists
++        if all_genomic_features:
++            x_c_batch = torch.cat(all_genomic_features, dim=0)  # [total_conditions, n_features]
++            cell_indices_batch = torch.cat(all_cell_indices, dim=0)  # [total_conditions]
++            doses_batch = torch.cat(all_doses, dim=0)  # [total_conditions]
++            times_batch = torch.cat(all_times, dim=0)  # [total_conditions]
++            batch_indices = torch.LongTensor(batch_indices)  # [total_conditions]
++        else:
++            # No genomic data in this batch
++            x_c_batch = torch.empty(0, len(self.genomic_cols))
++            cell_indices_batch = torch.empty(0, dtype=torch.long)
++            doses_batch = torch.empty(0)
++            times_batch = torch.empty(0)
++            batch_indices = torch.empty(0, dtype=torch.long)
+         
+         return {
+             "inputs": {
+                 "x_a": x_a_batch,
+                 "x_b": x_b_batch,
+-                "x_c": x_c_batch,
+-                "cell_indices": cell_indices_batch,
+-                "doses": doses_batch,  # Add batched doses
+-                "times": times_batch   # Add batched times
++                "x_c": x_c_batch,  # [total_conditions, n_features]
++                "cell_indices": cell_indices_batch,  # [total_conditions]
++                "doses": doses_batch,  # [total_conditions]
++                "times": times_batch,  # [total_conditions]
++                "batch_indices": batch_indices  # [total_conditions] - which sample each condition belongs to
+             },
+             "labels": labels_batch
+         }
+ 
+-def _split_data(dataset: Dataset, splits: Dict[str, str]) -> Dict[str, Dataset]:
++def _deepchem_split(dataset, train_size=0.8, val_size=0.2, test_size=0.0, 
++                   split_method="butina", butina_threshold=0.7, seed=42, **kwargs):
++    """
++    Perform train/val/test split using DeepChem splitters.
++    Similar to the user's example but returns integer indices for PyTorch compatibility.
++    """
++    print(f"Using DeepChem {split_method} splitter")
++    
++    # Get SMILES and activities from dataset
++    smiles = dataset.unique_smiles
++    activities = dataset.df.values
++    
++    # Create DeepChem dataset (similar to user's example)
++    dc_dataset = dc.data.NumpyDataset(X=activities, ids=smiles)
++    
++    # Initialize the appropriate splitter
++    if split_method == "butina":
++        splitter = dc.splits.ButinaSplitter(cutoff=butina_threshold)
++        print(f"Using Butina splitter with cutoff={butina_threshold}")
++    elif split_method == "scaffold":
++        splitter = dc.splits.ScaffoldSplitter()
++        print("Using Scaffold splitter")
++    else:
++        raise ValueError(f"Unknown DeepChem split_method: {split_method}. Choose 'butina' or 'scaffold'")
++    
++    # Validate split ratios
++    total_ratio = train_size + val_size + test_size
++    if abs(total_ratio - 1.0) > 1e-6:
++        print(f"Warning: Split ratios don't sum to 1.0 (sum={total_ratio:.3f}). Normalizing...")
++        train_size = train_size / total_ratio
++        val_size = val_size / total_ratio
++        test_size = test_size / total_ratio
++    
++    # Perform the split (similar to user's example)
++    if test_size > 0:
++        train_ds, val_ds, test_ds = splitter.train_valid_test_split(
++            dc_dataset, frac_train=train_size, frac_valid=val_size, frac_test=test_size, seed=seed)
++        test_smiles = set(test_ds.ids) if len(test_ds) > 0 else set()
++    else:
++        train_ds, val_ds = splitter.train_test_split(
++            dc_dataset, frac_train=train_size, seed=seed)
++        test_smiles = set()
++    
++    # Get SMILES for each split (similar to user's example: ncv_smiles, heldouttest_smiles)
++    train_smiles = set(train_ds.ids) if len(train_ds) > 0 else set()
++    val_smiles = set(val_ds.ids) if len(val_ds) > 0 else set()
++    
++    # Convert to integer indices for PyTorch Dataset compatibility
++    train_idx = [i for i, smile in enumerate(smiles) if smile in train_smiles]
++    val_idx = [i for i, smile in enumerate(smiles) if smile in val_smiles]
++    test_idx = [i for i, smile in enumerate(smiles) if smile in test_smiles]
++    
++    total_samples = len(train_idx) + len(val_idx) + len(test_idx)
++    print(f"DeepChem {split_method} split:")
++    print(f"  Train: {len(train_idx)} samples ({len(train_idx)/total_samples:.3f})")
++    print(f"  Val:   {len(val_idx)} samples ({len(val_idx)/total_samples:.3f})")
++    if test_idx:
++        print(f"  Test:  {len(test_idx)} samples ({len(test_idx)/total_samples:.3f})")
++    
++    return train_idx, val_idx, test_idx
++
++def _split_data(dataset: Dataset, splits: Dict[str, str], train_size=0.8, val_size=0.2, test_size=0.0,
++                split_method="random", butina_threshold=0.7, seed=42, **kwargs) -> Dict[str, Dataset]:
+     if splits is None:
+         unique_smiles = dataset.unique_smiles
+         total_smiles = len(unique_smiles)
+-        train_idx = np.random.choice(
+-            total_smiles, size=int(0.9 * total_smiles), replace=False
+-        )
+-        val_idx = [i for i in range(total_smiles) if i not in train_idx]
++        
++        print(f"Using {split_method} split method")
++        
++        if split_method == "random":
++            # Validate split ratios for random split
++            total_ratio = train_size + val_size + test_size
++            if abs(total_ratio - 1.0) > 1e-6:
++                print(f"Warning: Split ratios don't sum to 1.0 (sum={total_ratio:.3f}). Normalizing...")
++                train_size = train_size / total_ratio
++                val_size = val_size / total_ratio
++                test_size = test_size / total_ratio
++            
++            # Set random seed for reproducibility
++            np.random.seed(seed)
++            indices = np.random.permutation(total_smiles)
++            
++            train_end = int(train_size * total_smiles)
++            val_end = train_end + int(val_size * total_smiles)
++            
++            train_idx = indices[:train_end].tolist()
++            val_idx = indices[train_end:val_end].tolist()
++            test_idx = indices[val_end:].tolist()
++            
++            print(f"Random split:")
++            print(f"  Train: {len(train_idx)} samples ({len(train_idx)/total_smiles:.3f})")
++            print(f"  Val:   {len(val_idx)} samples ({len(val_idx)/total_smiles:.3f})")
++            print(f"  Test:  {len(test_idx)} samples ({len(test_idx)/total_smiles:.3f})")
++            
++        elif split_method in ["butina", "scaffold"]:
++            # Use DeepChem splitters
++            train_idx, val_idx, test_idx = _deepchem_split(
++                dataset=dataset,
++                train_size=train_size,
++                val_size=val_size,
++                test_size=test_size,
++                split_method=split_method,
++                butina_threshold=butina_threshold,
++                seed=seed,
++                **kwargs
++            )
++        else:
++            raise ValueError(f"Unknown split_method: {split_method}. Choose 'random', 'butina', or 'scaffold'")
++        
+         return {
+             "train": Subset(dataset, train_idx),
+             "val": Subset(dataset, val_idx),
+-            "test": Subset(dataset, val_idx),
++            "test": Subset(dataset, test_idx),
+         }
+ 
+     assert "train" in splits and "val" in splits
+diff --git a/mocop/model.py b/mocop/model.py
+index ff64f5a..c0f5b1c 100644
+--- a/mocop/model.py
++++ b/mocop/model.py
+@@ -1,3 +1,4 @@
++import decimal
+ from typing import Iterable, List, Optional, Set, Tuple, Union
+ 
+ import pytorch_lightning as pl
+@@ -11,6 +12,7 @@ from torch.nn import functional as F
+ from layers import GatedGraphConvolution
+ from metrics import accuracy
+ from steps import _supervised_metric, _validation_epoch_end, _validation_epoch_end_all_cell_lines
++from pretrained_utils import load_pretrained_encoder, PretrainedEncoder
+ 
+ class Hidden_block(nn.Module):
+     def __init__(self, input_dim, hidden_dim, norm_type=None, use_skip_connection=True):
+@@ -449,6 +451,9 @@ class LightningGGNN(pl.LightningModule):
+     def forward(self, **kwargs):
+         return self.model(**kwargs)
+ 
++    def on_train_epoch_start(self):
++        self.log("learning_rate_epoch", self.optimizer.param_groups[0]["lr"], on_step=False, on_epoch=True)
++
+     def validation_epoch_end(self, validation_step_outputs):
+         _validation_epoch_end(self, validation_step_outputs)
+ 
+@@ -833,37 +838,59 @@ class CellLineTripleInputEncoder(pl.LightningModule):
+         encoder_a: Optional[MultiLayerPerceptron],
+         encoder_b: Optional[MultiLayerPerceptron],
+         encoder_c: Optional[MultiLayerPerceptron],
++        # Pretrained encoder paths
++        pretrained_encoder_b_path: Optional[str] = None,
++        pretrained_encoder_c_path: Optional[str] = None,
++        # Pretrained encoder options
++        freeze_encoder_b: bool = False,
++        freeze_encoder_c: bool = False,
++        use_latent_layer_b: bool = True,
++        use_latent_layer_c: bool = True,
++        load_pretrained_weights_b: bool = True,
++        load_pretrained_weights_c: bool = True,
++        # Cell line embedding parameters
+         n_cell_lines: int = 24,
+         n_dose_levels: int = 6,
+         n_time_points: int = 2,
+         cell_embedding_dim: int = 32,
+         dose_embedding_dim: int = 32,
+         time_embedding_dim: int = 32,
+-        supervised_head_dim=[64, 2],
+-        non_lin_proj: bool = False,
+-        dim=128,
++        # Other parameters
+         temperature=10,
++        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+     ):
+         super().__init__()
+         self.encoder_a = encoder_a
+-        self.encoder_b = encoder_b
+         
+-        # Modify genomic encoder to handle concatenated features
+-        if encoder_c is not None:
+-            genomic_dim = encoder_c.module[1].in_features  # Get input dim from first Linear layer
+-            # Create new first layer with updated input dimension including dose and time embeddings
+-            new_first_layer = nn.Linear(
+-                genomic_dim + cell_embedding_dim + dose_embedding_dim + time_embedding_dim, 
+-                encoder_c.module[1].out_features
++        # Load pretrained encoders if paths provided, otherwise use provided encoders
++        if pretrained_encoder_b_path is not None:
++            print(f"Loading pretrained encoder_b from: {pretrained_encoder_b_path}")
++            self.encoder_b = load_pretrained_encoder(
++                checkpoint_path=pretrained_encoder_b_path,
++                freeze=freeze_encoder_b,
++                device=device,
++                load_weights=load_pretrained_weights_b
+             )
+-            # Replace first layer
+-            encoder_c.module[1] = new_first_layer
++            print(f"Pretrained encoder_b loaded (frozen={freeze_encoder_b})")
++        else:
++            self.encoder_b = encoder_b
+             
+-        self.encoder_c = encoder_c
++        if pretrained_encoder_c_path is not None:
++            print(f"Loading pretrained conditional genomic encoder from: {pretrained_encoder_c_path}")
++            self.encoder_c = load_pretrained_encoder(
++                checkpoint_path=pretrained_encoder_c_path,
++                freeze=freeze_encoder_c,
++                device=device,
++                load_weights=load_pretrained_weights_c
++            )
++            print(f"Pretrained conditional genomic encoder loaded (frozen={freeze_encoder_c})")
++            print("Note: Pretrained encoder expects genomic features + conditional embeddings as input")
++        else:
++            # Store genomic encoder - expects concatenated input: genomic_features + cell_embedding + dose_embedding + time_embedding
++            # This applies to both pretrained and original encoders now
++            self.encoder_c = encoder_c
+         
+         # Rest of initialization
+-        self.dim = dim
+-        self.supervised_head_dim = supervised_head_dim
+         self.temperature = temperature
+         
+         # Cell line embedding with 0 as padding
+@@ -887,235 +914,245 @@ class CellLineTripleInputEncoder(pl.LightningModule):
+             padding_idx=0  # Use 0 as padding
+         )
+         
+-        # Projection heads
+-        self.add_module("supervised_head", None)
+-        self.add_module("h_a", None)
+-        self.add_module("h_b", None)
+-        self.add_module("h_c", None)
+-        
+-        self.proj_func = F.relu if non_lin_proj else lambda x: x
+         self.optimizer = None
++        
++        # Initialize sample batch attributes
++        self.sample_train_batch = None
++        self.sample_val_batch = None
+ 
+-    def forward(self, x_a=None, x_b=None, x_c=None, cell_indices=None, doses=None, times=None):
+-        """Forward pass with cell line, dose, and time embeddings."""
+-        # 1. Encode molecular features (unchanged)
++    def forward(self, x_a=None, x_b=None, x_c=None, cell_indices=None, doses=None, times=None, batch_indices=None):
++        """Forward pass with efficient genomic data processing."""
++        # 1. Encode molecular features
+         if x_a is not None:
+-            emb_a_ = self.encoder_a(x_a)
+-            if self.h_a is None:
+-                self.h_a = MultiLayerPerceptron(
+-                    num_input_features=emb_a_.size(-1),
+-                    hidden_layer_dimensions=[self.dim],
+-                ).to(emb_a_)
+-            emb_a = F.normalize(self.h_a(self.proj_func(emb_a_)))  # [B, F]
++            emb_a = F.normalize(self.encoder_a(x_a))  # [B, 128] - GNN now outputs 128-dim directly
+ 
+-        # 2. Encode morphological features (unchanged)
++        # 2. Encode morphological features
++        emb_b = None
+         if x_b is not None:
+-            emb_b = self.encoder_b(x_b)
+-            if self.h_b is None:
+-                self.h_b = MultiLayerPerceptron(
+-                    num_input_features=emb_b.size(-1),
+-                    hidden_layer_dimensions=[self.dim],
+-                ).to(emb_b)
+-            emb_b = F.normalize(self.h_b(self.proj_func(emb_b)))  # [B, F]
+-
+-        # 3. Encode genomic features with cell line, dose, and time embeddings
+-        if x_c is not None and cell_indices is not None:
+-            batch_size, n_cell_lines = x_c.shape[:2]
+-            
+-            # Get embeddings (0 indices will automatically be zero vectors)
+-            cell_emb = self.cell_embedding(cell_indices)  # [B, C, E_cell]
+-            dose_emb = self.dose_embedding(doses.long())  # [B, C, E_dose]
+-            time_emb = self.time_embedding(times.long())  # [B, C, E_time]
+-            
+-            # Reshape features and embeddings
+-            x_c_flat = x_c.view(-1, x_c.size(-1))  # [B*C, G]
+-            cell_emb_flat = cell_emb.view(-1, cell_emb.size(-1))  # [B*C, E_cell]
+-            dose_emb_flat = dose_emb.view(-1, dose_emb.size(-1))  # [B*C, E_dose]
+-            time_emb_flat = time_emb.view(-1, time_emb.size(-1))  # [B*C, E_time]
++            emb_b = F.normalize(self.encoder_b(x_b))  # [B, 128] - pretrained encoder outputs 128-dim
++
++        # 3. Encode genomic features (only if we have valid conditions)
++        emb_c = None
++        if x_c is not None and len(x_c) > 0:
++            # Always concatenate genomic features with conditional embeddings
++            # This is needed for both pretrained and original encoders now
++            cell_emb = self.cell_embedding(cell_indices.long())  # [total_conditions, E_cell]
++            dose_emb = self.dose_embedding(doses.long())  # [total_conditions, E_dose]
++            time_emb = self.time_embedding(times.long())  # [total_conditions, E_time]
+             
+             # Concatenate genomic features with all embeddings
+             x_c_combined = torch.cat([
+-                x_c_flat, 
+-                cell_emb_flat, 
+-                dose_emb_flat, 
+-                time_emb_flat
+-            ], dim=-1)  # [B*C, G+E_cell+E_dose+E_time]
+-            
+-            # Rest of the forward pass remains the same
+-            emb_c = self.encoder_c(x_c_combined)  # [B*C, F]
+-            
+-            if self.h_c is None:
+-                self.h_c = MultiLayerPerceptron(
+-                    num_input_features=emb_c.size(-1),
+-                    hidden_layer_dimensions=[self.dim],
+-                ).to(emb_c)
+-            
+-            emb_c = F.normalize(self.h_c(self.proj_func(emb_c)))  # [B*C, F]
+-            emb_c = emb_c.view(batch_size, n_cell_lines, self.dim)  # [B, C, F]
+-
+-        # Rest of the method remains the same
+-        logits_ab = torch.matmul(emb_a, emb_b.T)
+-        
+-        batch_size = emb_a.size(0)
+-        n_cell_lines = emb_c.size(1)
+-        logits_ac = []
++                x_c,  # [total_conditions, G]
++                cell_emb,  # [total_conditions, E_cell]
++                dose_emb,  # [total_conditions, E_dose]
++                time_emb   # [total_conditions, E_time]
++            ], dim=-1)  # [total_conditions, G+E_cell+E_dose+E_time]
++               
++            # Process through genomic encoder (pretrained or original) and normalize
++            emb_c = F.normalize(self.encoder_c(x_c_combined))  # [total_conditions, 128] - outputs 128-dim
++
++        # 4. Calculate contrastive logits (standard bidirectional approach)
++        # Morphological contrastive logits
++        logits_ab = None
++        if emb_b is not None:
++            logits_ab = torch.matmul(emb_a, emb_b.T)  # [B, B]
+         
+-        for c in range(n_cell_lines):
+-            cell_emb = emb_c[:, c]
+-            cell_logits = torch.matmul(emb_a, cell_emb.T)
+-            logits_ac.append(cell_logits)
+-        
+-        if self.supervised_head is None:
+-            self.supervised_head = MultiLayerPerceptron(
+-                num_input_features=emb_a_.size(-1),
+-                hidden_layer_dimensions=self.supervised_head_dim,
+-            ).to(emb_a_)
+-        supervised_logits = self.supervised_head(emb_a_)
++        # Genomic contrastive logits
++        logits_ac = None
++        if emb_c is not None and len(emb_c) > 0:
++            # Expand molecular embeddings to match genomic conditions
++            # batch_indices tells us which sample each genomic condition belongs to
++            emb_a_expanded = emb_a[batch_indices]  # [total_conditions, F]
++            
++            # Compute similarity matrix between expanded molecular and genomic embeddings
++            logits_ac = torch.matmul(emb_a_expanded, emb_c.T)  # [total_conditions, total_conditions]
+         
+-        return logits_ab, logits_ac, supervised_logits
++        return logits_ab, logits_ac, emb_a, emb_b, emb_c
+ 
+-    def _step(self, batch, batch_idx, step_name, dataloader_idx=None):
+-        inputs = batch["inputs"]
+-        supervised_labels = batch["labels"]
+-        
+-        # Forward pass
+-        logits_ab, logits_ac, supervised_logits = self.forward(**inputs)
++    def _compute_contrastive_losses(self, logits_ab, logits_ac, emb_a, emb_b, emb_c, inputs, step_name):
++        """Compute bidirectional contrastive losses for morphological and genomic modalities."""
++        loss = 0
++        n_valid_losses = 0
++        logs = {}
+         
+-        # Create masks for valid samples (not all -1s)
+-        b_valid = ~torch.all(inputs['x_b'] == -1, dim=1)        
+         # Apply temperature scaling
+         if step_name == "train":
+-            logits_ab = logits_ab * self.temperature
+-            logits_ac = [logits * self.temperature for logits in logits_ac]
+-        
+-        criterion = nn.CrossEntropyLoss()
+-        labels = torch.arange(logits_ab.size(0), device=logits_ab.device)
++            if logits_ab is not None:
++                logits_ab = logits_ab * self.temperature
++            if logits_ac is not None:
++                logits_ac = logits_ac * self.temperature
+         
+-        loss = 0
+-        n_valid_losses = 0
+-        logs = {}
++        criterion = nn.CrossEntropyLoss(ignore_index=-1)
+         
+-        # 1. Morphological contrastive loss
+-        if b_valid.any():
+-            loss_ab = criterion(logits_ab[b_valid], labels[b_valid])
+-            loss_ba = criterion(logits_ab.T[b_valid], labels[b_valid])
+-            morphological_loss = (loss_ab + loss_ba) / 2
+-            loss += morphological_loss
+-            n_valid_losses += 1  # Count both forward and backward losses
++        # 1. Morphological contrastive loss (bidirectional like DualInputEncoder)
++        if logits_ab is not None:
++            b_valid = ~torch.all(inputs['x_b'] == -1, dim=1)
++            if b_valid.any():
++                batch_size = logits_ab.size(0)
++                labels = torch.arange(batch_size).to(device=logits_ab.device).long()
++                
++                # Forward: mol->morph
++                loss_ab = criterion(logits_ab[b_valid], labels[b_valid])
++                # Backward: morph->mol  
++                loss_ba = criterion(logits_ab.T[b_valid], labels[b_valid])
++                
++                morphological_loss = (loss_ab + loss_ba) / 2
++                loss += morphological_loss
++                n_valid_losses += 1
+ 
++                logs.update({
++                    "morphological_loss": morphological_loss.cpu().detach(),
++                    "loss_ab": loss_ab.cpu().detach(),
++                    "loss_ba": loss_ba.cpu().detach(),
++                })
++        
++        # 2. Genomic contrastive loss following the mathematical formula (VECTORIZED):
++        # (1/|B|) * Σ_{i=1}^B * (1/|Γ_i|) * Σ_{γ ∈ Γ_i} * -log(exp(s(u_i^mol, u_{i,γ}^gene)/τ) / Σ_{j=1}^B exp(s(u_i^mol, u_{j,γ}^gene)/τ))
++        if logits_ac is not None and logits_ac.size(0) > 0:
++            batch_indices = inputs['batch_indices']
++            n_conditions = logits_ac.size(0)
++            
++            # Group conditions by batch index (molecule) - vectorized approach
++            unique_batch_indices, inverse_indices = torch.unique(batch_indices, return_inverse=True)
++            n_molecules_with_genomic = len(unique_batch_indices)
++            
++            # VECTORIZED FORWARD DIRECTION: mol->genomic
++            # Compute cross-entropy loss for all conditions at once
++            # logits_ac is [total_conditions, total_conditions] where logits_ac[i,j] = similarity(condition_i, condition_j)
++            # Labels for each condition are just their own indices (diagonal should be highest)
++            all_condition_labels = torch.arange(n_conditions, device=logits_ac.device)  # [total_conditions]
++            
++            # Compute cross-entropy loss for each condition (vectorized)
++            all_condition_losses = F.cross_entropy(logits_ac, all_condition_labels, reduction='none')  # [total_conditions]
++            
++            # Group losses by molecule and average within each molecule
++            # Create a mapping matrix: molecule_mask[mol_idx, condition_idx] = 1 if condition belongs to molecule
++            molecule_mask = inverse_indices.unsqueeze(0) == torch.arange(n_molecules_with_genomic, device=logits_ac.device).unsqueeze(1)  # [n_molecules, n_conditions]
++            
++            # Count conditions per molecule
++            conditions_per_molecule = molecule_mask.sum(dim=1).float()  # [n_molecules]
++            
++            # Sum losses for each molecule, then divide by number of conditions in that molecule
++            molecule_loss_sums = torch.matmul(molecule_mask.float(), all_condition_losses)  # [n_molecules]
++            molecule_loss_averages = molecule_loss_sums / conditions_per_molecule.clamp(min=1)  # [n_molecules]
++            
++            # Average over molecules
++            genomic_loss = molecule_loss_averages.mean()
++            
++            # VECTORIZED BACKWARD DIRECTION: genomic->mol
++            # Transpose logits for backward direction
++            all_condition_losses_backward = F.cross_entropy(logits_ac.T, all_condition_labels, reduction='none')  # [total_conditions]
++            
++            # Group and average same way
++            molecule_loss_sums_backward = torch.matmul(molecule_mask.float(), all_condition_losses_backward)  # [n_molecules]
++            molecule_loss_averages_backward = molecule_loss_sums_backward / conditions_per_molecule.clamp(min=1)  # [n_molecules]
++            genomic_loss_backward = molecule_loss_averages_backward.mean()
++            
++            # Combine forward and backward losses
++            final_genomic_loss = (genomic_loss + genomic_loss_backward) / 2
++            loss += final_genomic_loss
++            n_valid_losses += 1
++            
+             logs.update({
+-                "loss_ab": loss_ab.cpu().detach(),
+-                "loss_ba": loss_ba.cpu().detach(),
+-                "morphological_loss": morphological_loss.cpu().detach()
++                "genomic_loss": final_genomic_loss.cpu().detach(),
++                "loss_ac": genomic_loss.cpu().detach(), 
++                "loss_ca": genomic_loss_backward.cpu().detach(),
++                "n_genomic_conditions": n_conditions,
++                "n_molecules_with_genomic": n_molecules_with_genomic,
++                "avg_conditions_per_molecule": n_conditions / max(n_molecules_with_genomic, 1),
+             })
+         else:
+-            loss_ab = loss_ba = torch.tensor(0.0, device=logits_ab.device)
++            # When no genomic data is available, only include the count metrics
+             logs.update({
+-                "loss_ab": loss_ab.cpu().detach(),
+-                "loss_ba": loss_ba.cpu().detach(),
+-                "morphological_loss": morphological_loss.cpu().detach()
++                "n_genomic_conditions": 0,
++                "n_molecules_with_genomic": 0,
++                "avg_conditions_per_molecule": 0
+             })
+         
+-        # 2. Genomic contrastive loss for each cell line
+-        cell_losses = []
+-        cell_indices = inputs['cell_indices']  # [B, n_cell_lines]
++        # Average loss over number of modalities
++        loss = loss / max(n_valid_losses, 1)
++        logs["n_valid_losses"] = n_valid_losses
+         
+-        for c in range(cell_indices.size(1)):
+-            cell_idx = c + 1  # Convert to 1-based indexing to match dataset
+-            # Only compute loss if any samples have this cell line
+-            if (cell_indices[:, c] == cell_idx).any():
+-                c_valid = (cell_indices[:, c] == cell_idx)
+-                loss_ac = criterion(logits_ac[c][c_valid], labels[c_valid])
+-                loss_ca = criterion(logits_ac[c].T[c_valid], labels[c_valid])
+-                cell_loss = (loss_ac + loss_ca) / 2
+-                cell_losses.append(cell_loss)
++        return loss, logs
+ 
+-                logs.update({
+-                    f"cell_line_{cell_idx}_loss_ac": loss_ac.cpu().detach(),
+-                    f"cell_line_{cell_idx}_loss_ca": loss_ca.cpu().detach(),
+-                })
+-        
+-        if cell_losses:
+-            genomic_loss = torch.stack(cell_losses).mean()
+-            loss += genomic_loss
+-            n_valid_losses += 1  # Count genomic loss as one total
+-            logs["genomic_loss"] = genomic_loss.cpu().detach()
+-            logs["n_cell_lines"] = len(cell_losses)
++
++
++    def _compute_accuracies(self, logits_ab, logits_ac, inputs):
++        """Compute top-k accuracies for morphological and genomic modalities."""
++        logs = {}
++        topk = (1, 5, 10)
+         
+-        # Average loss over number of valid losses
+-        loss = loss / max(n_valid_losses, 1)
++        # Morphological accuracies (bidirectional)
++        if logits_ab is not None:
++            b_valid = ~torch.all(inputs['x_b'] == -1, dim=1)
++            if b_valid.any():
++                batch_size = logits_ab.size(0)
++                labels = torch.arange(batch_size).to(device=logits_ab.device).long()
++                
++                acc_ab = accuracy(logits_ab[b_valid].detach(), labels[b_valid].detach(), topk=topk)
++                acc_ba = accuracy(logits_ab.T[b_valid].detach(), labels[b_valid].detach(), topk=topk)
++                
++                for k, acc_ak, acc_bk in zip(topk, acc_ab, acc_ba):
++                    suffix = f"_top{k}" if k != 1 else ""
++                    acc_ak = acc_ak.cpu().item()
++                    acc_bk = acc_bk.cpu().item()
++                    logs.update({
++                        f"morph_acc_a{suffix}": acc_ak,
++                        f"morph_acc_b{suffix}": acc_bk,
++                        f"morph_acc{suffix}": (acc_ak + acc_bk) / 2,
++                    })
+         
+-        # 3. Supervised loss (unchanged)
+-        if supervised_labels.ne(-1).any():
+-            supervised_criterion = nn.BCEWithLogitsLoss(reduction="none")
+-            supervised_loss = supervised_criterion(supervised_logits, supervised_labels)
+-            supervised_loss = supervised_loss.masked_select(supervised_labels.ne(-1)).mean()
+-            loss += supervised_loss
++        # Genomic accuracies (simple pattern like morphological)
++        if logits_ac is not None and logits_ac.size(0) > 0:
++            n_conditions = logits_ac.size(0)
++            labels = torch.arange(n_conditions).to(device=logits_ac.device).long()
+             
+-            supervised_outputs = torch.sigmoid(supervised_logits)
+-            logs.update(_supervised_metric(supervised_labels, supervised_outputs))
+-            logs["supervised_loss"] = supervised_loss.cpu().detach()
+-        
+-        # Calculate accuracies
+-        topk = (1, 5, 10)
+-        
+-        # 1. Morphological accuracies
+-        if b_valid.any():
+-            acc_a = accuracy(logits_ab[b_valid].detach(), labels[b_valid].detach(), topk=topk)
+-            acc_b = accuracy(logits_ab.T[b_valid].detach(), labels[b_valid].detach(), topk=topk)
++            # Simple accuracy computation just like morphological
++            acc_ac = accuracy(logits_ac.detach(), labels.detach(), topk=topk)
++            acc_ca = accuracy(logits_ac.T.detach(), labels.detach(), topk=topk)
+             
+-            for k, acc_ak, acc_bk in zip(topk, acc_a, acc_b):
++            for k, acc_ak, acc_ck in zip(topk, acc_ac, acc_ca):
+                 suffix = f"_top{k}" if k != 1 else ""
+                 acc_ak = acc_ak.cpu().item()
+-                acc_bk = acc_bk.cpu().item()
++                acc_ck = acc_ck.cpu().item()
+                 logs.update({
+-                    f"morphological_acc_a{suffix}": acc_ak,
+-                    f"morphological_acc_b{suffix}": acc_bk,
+-                    f"morphological_acc{suffix}": (acc_ak + acc_bk) / 2,
++                    f"genomic_acc_a{suffix}": acc_ak,
++                    f"genomic_acc_c{suffix}": acc_ck,
++                    f"genomic_acc{suffix}": (acc_ak + acc_ck) / 2,
+                 })
++        else:
++            # When no genomic data is available, don't include genomic accuracy metrics
++            pass
+         
+-        # 2. Genomic accuracies (averaged across all cell lines)
+-        if cell_losses:  # Only if we have valid cell lines
+-            genomic_accs_a = []
+-            genomic_accs_b = []
+-            
+-            for c in range(cell_indices.size(1)):
+-                cell_idx = c + 1
+-                if (cell_indices[:, c] == cell_idx).any():
+-                    c_valid = (cell_indices[:, c] == cell_idx)
+-                    acc_ac = accuracy(logits_ac[c][c_valid].detach(), labels[c_valid].detach(), topk=topk)
+-                    acc_ca = accuracy(logits_ac[c].T[c_valid].detach(), labels[c_valid].detach(), topk=topk)
+-                    genomic_accs_a.append(acc_ac)
+-                    genomic_accs_b.append(acc_ca)
+-            
+-            # Average accuracies across all cell lines
+-            if genomic_accs_a:
+-                for k_idx, k in enumerate(topk):
+-                    suffix = f"_top{k}" if k != 1 else ""
+-                    avg_acc_a = sum(acc[k_idx] for acc in genomic_accs_a) / len(genomic_accs_a)
+-                    avg_acc_b = sum(acc[k_idx] for acc in genomic_accs_b) / len(genomic_accs_b)
+-                    logs.update({
+-                        f"genomic_acc_a{suffix}": avg_acc_a.cpu().item(),
+-                        f"genomic_acc_b{suffix}": avg_acc_b.cpu().item(),
+-                        f"genomic_acc{suffix}": (avg_acc_a.cpu().item() + avg_acc_b.cpu().item()) / 2,
+-                    })
++        return logs
++
++    def _step(self, batch, batch_idx, step_name, dataloader_idx=None):
++        inputs = batch["inputs"]
++        
++        # Forward pass
++        logits_ab, logits_ac, emb_a, emb_b, emb_c = self.forward(**inputs)
++        
++        # Compute contrastive losses
++        contrastive_loss, contrastive_logs = self._compute_contrastive_losses(
++            logits_ab, logits_ac, emb_a, emb_b, emb_c, inputs, step_name
++        )
++        
++        # Compute accuracies
++        accuracy_logs = self._compute_accuracies(logits_ab, logits_ac, inputs)
++        
++        # Combine all logs
++        logs = {}
++        logs.update(contrastive_logs)
++        logs.update(accuracy_logs)
++        logs["loss"] = contrastive_loss.cpu().detach()
+         
+-        # Add final metrics
+-        logs.update({
+-            "loss": loss.cpu().detach(),
+-            "n_valid_losses": n_valid_losses,
+-        })
+         logs = {f"{step_name}/{k}": v for k, v in logs.items()}
+ 
+         batch_dictionary = {
+-            "loss": loss,
++            "loss": contrastive_loss,
+             "log": logs,
+         }
+ 
+-        if step_name == "val" and "supervised_loss" in logs:
+-            batch_dictionary["outputs"] = supervised_outputs
+-            batch_dictionary["labels"] = supervised_labels
+-
+         return batch_dictionary
+ 
+     # Keep the rest of the methods same as TripleInputEncoder
+@@ -1145,15 +1182,12 @@ class CellLineTripleInputEncoder(pl.LightningModule):
+     def validation_step(self, val_batch, batch_idx, dataloader_idx=None):
+         if self.sample_val_batch is None:
+             self.sample_val_batch = val_batch
+-        batch_dictionary = self._step(
++        return self._step(
+             batch=val_batch,
+             batch_idx=batch_idx,
+             step_name="val",
+             dataloader_idx=dataloader_idx,
+         )
+-        for k, v in batch_dictionary["log"].items():
+-            self.log(k, v, on_step=False, on_epoch=True)
+-        return batch_dictionary
+     
+     def on_train_epoch_start(self):
+         print("on_train_epoch_start")
+@@ -1181,8 +1215,322 @@ class CellLineTripleInputEncoder(pl.LightningModule):
+         print("on_validation_epoch_start")
+         self.sample_val_batch = None # Reset sample batch
+ 
++    def validation_epoch_end(self, validation_step_outputs):
++        _validation_epoch_end(self, validation_step_outputs)
++
++
++def check_collapse(embeddings, similarity_matrix, model, name="emb", eps=1e-6, cross_entropy=None, target_entropy=None, kl_divs=None):
++    """
++    Check whether embeddings are collapsing and log metrics.
++    embeddings: [N, D] normalized embeddings (already normalized by F.normalize)
++    similarity_matrix: [N, N] pre-computed similarity matrix (embeddings @ embeddings.T)
++    model: PyTorch Lightning model instance for logging
++    name: prefix for logged metrics
++    cross_entropy: [N] pre-computed cross-entropy values (required)
++    target_entropy: [N] pre-computed target entropy values (required)
++    kl_divs: [N] pre-computed KL divergence values (required)
++    """
++    with torch.no_grad():
++        # 1. Variance per dimension (most important for collapse detection)
++        var_per_dim = embeddings.var(dim=0)
++        mean_var, min_var = var_per_dim.mean().item(), var_per_dim.min().item()
++
++        # 2. Reuse pre-computed similarity matrix
++        off_diag = similarity_matrix[~torch.eye(similarity_matrix.size(0), dtype=bool, device=embeddings.device)]
++        mean_sim_offdiag, std_sim_offdiag = off_diag.mean().item(), off_diag.std().item()
++        
++        # 3. Diagonal similarity (should be ~1.0 for normalized embeddings)
++        diag = torch.diag(similarity_matrix)
++        mean_sim_diag, std_sim_diag = diag.mean().item(), diag.std().item()
++        
++        # 4. Cross-entropy decomposition: H(YY, XY) = h(YY) + DKL(YY || XY)
++        
++        # Use pre-computed values from forward loss computation
++        mean_cross_entropy = cross_entropy.mean().item()
++        mean_target_entropy = target_entropy.mean().item()
++        mean_kl_div = kl_divs.mean().item()
++        std_kl_div = kl_divs.std().item()
++       
++        # Enhanced collapse detection using multiple criteria
++        # KL divergence is the key metric - KL ≈ 0 indicates collapse (distributions are identical)
++        collapsed = (mean_var < eps) or (mean_sim_offdiag > 0.8) or (mean_kl_div < 0.1)
++
++        # Create log dictionary and log all metrics
++        log_dict = {
++            f"{name}_mean_var": mean_var,
++            f"{name}_min_var": min_var,
++            f"{name}_mean_sim_offdiag": mean_sim_offdiag,
++            f"{name}_std_sim_offdiag": std_sim_offdiag,
++            f"{name}_mean_sim_diag": mean_sim_diag,
++            f"{name}_std_sim_diag": std_sim_diag,
++            f"{name}_mean_cross_entropy": mean_cross_entropy,
++            f"{name}_mean_target_entropy": mean_target_entropy,
++            f"{name}_mean_kl_div": mean_kl_div,
++            f"{name}_std_kl_div": std_kl_div,
++            f"{name}_collapsed": float(collapsed),
++            f"{name}_collapse_warning": 1.0 if collapsed else 0.0,
++        }
++        
++        # Log all metrics using the same structure as the rest of the codebase
++        for k, v in log_dict.items():
++            model.log(k, v, on_step=False, on_epoch=True)
++
++
++class CellLineTripleInputEncoderSoftHard(CellLineTripleInputEncoder):
++    """
++    CellLineTripleInputEncoder with soft and hard contrastive losses for morphological modality.
++    
++    This class inherits from CellLineTripleInputEncoder and overrides the morphological
++    contrastive loss computation to use:
++    - Soft contrastive loss for forward direction (mol→morph)
++    - Hard contrastive loss for backward direction (morph→mol)
++    """
++    
++    def __init__(self, *args, gradient_stop=True, temperature_main=None, temperature_momentum=None, 
++                 temperature_momentum_morph=None, temperature_momentum_genomic=None, **kwargs):
++        """
++        Initialize with optional gradient stopping for collapse prevention.
++        
++        Args:
++            gradient_stop (bool): If True, apply stop gradient trick to target distributions (YY)
++                                 to prevent collapse. If False, gradients flow through all distributions.
++            temperature_main (float): Temperature for main encoder (student) - if None, uses parent's temperature
++            temperature_momentum (float): Temperature for momentum encoder (teacher) - if None, uses parent's temperature
++            temperature_momentum_morph (float): Temperature for morphological momentum encoder - if None, uses temperature_momentum
++            temperature_momentum_genomic (float): Temperature for genomic momentum encoder - if None, uses temperature_momentum
++        """
++        super().__init__(*args, **kwargs)
++        self.gradient_stop = gradient_stop
++        
++        # Set separate temperatures for main and momentum encoders
++        self.temperature_main = temperature_main if temperature_main is not None else self.temperature
++        self.temperature_momentum = temperature_momentum if temperature_momentum is not None else self.temperature
++        
++        # Set separate momentum temperatures for each modality
++        self.temperature_momentum_morph = temperature_momentum_morph if temperature_momentum_morph is not None else self.temperature_momentum
++        self.temperature_momentum_genomic = temperature_momentum_genomic if temperature_momentum_genomic is not None else self.temperature_momentum
++        
++        print(f"Temperature main: {self.temperature_main}")
++        print(f"Temperature momentum: {self.temperature_momentum}")
++        print(f"Temperature momentum (morphological): {self.temperature_momentum_morph}")
++        print(f"Temperature momentum (genomic): {self.temperature_momentum_genomic}")
++    
++    def forward(self, x_a=None, x_b=None, x_c=None, cell_indices=None, doses=None, times=None, batch_indices=None):
++        """Forward pass that also returns morphological embeddings for soft contrastive loss."""
++        # 1. Encode molecular features
++        if x_a is not None:
++            emb_a = F.normalize(self.encoder_a(x_a))  # [B, 128] - GNN now outputs 128-dim directly
++
++        # 2. Encode morphological features
++        emb_b = None
++        if x_b is not None:
++            emb_b = F.normalize(self.encoder_b(x_b))  # [B, 128] - pretrained encoder outputs 128-dim
++
++        # 3. Encode genomic features (only if we have valid conditions)
++        emb_c = None
++        if x_c is not None and len(x_c) > 0:
++            # Always concatenate genomic features with conditional embeddings
++            cell_emb = self.cell_embedding(cell_indices.long())  # [total_conditions, E_cell]
++            dose_emb = self.dose_embedding(doses.long())  # [total_conditions, E_dose]
++            time_emb = self.time_embedding(times.long())  # [total_conditions, E_time]
++            
++            # Concatenate genomic features with all embeddings
++            x_c_combined = torch.cat([
++                x_c,  # [total_conditions, G]
++                cell_emb,  # [total_conditions, E_cell]
++                dose_emb,  # [total_conditions, E_dose]
++                time_emb   # [total_conditions, E_time]
++            ], dim=-1)  # [total_conditions, G+E_cell+E_dose+E_time]
++               
++            # Process through genomic encoder (pretrained or original) and normalize
++            emb_c = F.normalize(self.encoder_c(x_c_combined))  # [total_conditions, 128] - outputs 128-dim
++
++        # 4. Calculate contrastive logits
++        # Morphological contrastive logits
++        logits_ab = None
++        if emb_b is not None:
++            logits_ab = torch.matmul(emb_a, emb_b.T)  # [B, B]
++        
++        # Genomic contrastive logits
++        logits_ac = None
++        if emb_c is not None and len(emb_c) > 0:
++            # Expand molecular embeddings to match genomic conditions
++            emb_a_expanded = emb_a[batch_indices]  # [total_conditions, F]
++            
++            # Compute similarity matrix between expanded molecular and genomic embeddings
++            logits_ac = torch.matmul(emb_a_expanded, emb_c.T)  # [total_conditions, total_conditions]
++        
++        return logits_ab, logits_ac, emb_a, emb_b, emb_c
++    
++    def _compute_morphological_contrastive_loss(self, logits_ab, emb_b, valid_b_mask, is_training=True):
++        """Compute morphological contrastive loss: soft forward + hard backward."""
++        if not valid_b_mask.any():
++            zero_loss = torch.tensor(0.0, device=logits_ab.device)
++            return zero_loss, zero_loss, zero_loss
++        
++        # Get valid indices and apply temperature scaling
++        valid_idx = torch.where(valid_b_mask)[0]
++        scale_main = self.temperature_main if is_training else 1.0
++        scale_momentum = self.temperature_momentum_morph if is_training else 1.0
++        
++        # Subselect valid samples
++        logits_XY = logits_ab[valid_idx][:, valid_idx]  # Don't scale here
++        emb_b_sub = emb_b[valid_idx]
++        
++        # Forward: soft contrastive loss (mol→morph) with cross-entropy decomposition
++        logp_XY = F.log_softmax(logits_XY * scale_main, dim=1)  # Use main temperature for predictions
++        logits_YY = torch.matmul(emb_b_sub, emb_b_sub.T)
++        
++        # Compute YY distribution and its log separately for clarity
++        # Apply stop gradient trick conditionally to prevent collapse
++        if self.gradient_stop:
++            YY = F.softmax((logits_YY * scale_momentum).detach(), dim=1)  # Use momentum temperature for targets
++            log_YY = F.log_softmax((logits_YY * scale_momentum).detach(), dim=1)  # Use momentum temperature for targets
++        else:
++            YY = F.softmax(logits_YY * scale_momentum, dim=1)  # Use momentum temperature for targets
++            log_YY = F.log_softmax(logits_YY * scale_momentum, dim=1)  # Use momentum temperature for targets
++        
++        # Cross-entropy decomposition: H(YY, XY) = h(YY) + DKL(YY || XY)
++        cross_entropy = -(YY * logp_XY).sum(dim=1)  # [N] - H(YY, XY)
++        target_entropy = -(YY * log_YY).sum(dim=1)  # [N] - h(YY) = -sum(YY * log(YY))
++        kl_divs = cross_entropy - target_entropy  # [N] - DKL(YY || XY)
++        
++        # Forward loss is the cross-entropy (sum of entropy + KL)
++        loss_forward = cross_entropy.mean()
++        
++        # Backward: hard contrastive loss (morph→mol)
++        labels = torch.arange(len(valid_idx), device=logits_ab.device)
++        loss_backward = F.cross_entropy(logits_XY.T, labels)
++        
++        # Collapse detection for morphological embeddings
++        if is_training:
++            check_collapse(emb_b_sub, logits_YY, self, "morph", eps=1e-6, 
++                          cross_entropy=cross_entropy, target_entropy=target_entropy, kl_divs=kl_divs)
++        
++        return 0.5 * (loss_forward + loss_backward), loss_forward, loss_backward
+ 
+-    #def on_validation_epoch_end(self):
+-    #    print("on_validation_epoch_end")
+-    #    _validation_epoch_end_all_cell_lines(self, self.validation_step_outputs)
++    def _compute_genomic_soft_contrastive_loss(self, logits_ac, emb_c, batch_indices, is_training=True):
++        """Compute genomic contrastive loss: soft forward + hard backward."""
++        if logits_ac is None or logits_ac.size(0) == 0:
++            zero_loss = torch.tensor(0.0, device=logits_ac.device if logits_ac is not None else torch.device('cpu'))
++            return zero_loss, zero_loss, zero_loss
++        
++        device = logits_ac.device
++        
++        # Get molecular grouping information
++        unique_batch_indices, inverse_indices = torch.unique(batch_indices, return_inverse=True)
++        n_molecules_with_genomic = len(unique_batch_indices)
++        n_conditions = logits_ac.size(0)
++        
++        # Create molecule mask: [n_molecules, n_conditions]
++        molecule_mask = inverse_indices.unsqueeze(0) == torch.arange(n_molecules_with_genomic, device=device).unsqueeze(1)
++        
++        # Forward: soft contrastive loss (mol→genomic)
++        # Apply temperature scaling explicitly
++        scale_main = self.temperature_main if is_training else 1.0
++        scale_momentum = self.temperature_momentum_genomic if is_training else 1.0
++        logp_XY = F.log_softmax(logits_ac * scale_main, dim=1)  # Use main temperature for predictions
++        
++        # Target distribution: genomic self-similarity
++        logits_YY = torch.matmul(emb_c, emb_c.T)  # [total_conditions, total_conditions]
++        
++        # Compute YY distribution and its log separately for clarity
++        # Apply stop gradient trick conditionally to prevent collapse
++        if self.gradient_stop:
++            YY = F.softmax((logits_YY * scale_momentum).detach(), dim=1)  # Use momentum temperature for targets
++            log_YY = F.log_softmax((logits_YY * scale_momentum).detach(), dim=1)  # Use momentum temperature for targets
++        else:
++            YY = F.softmax(logits_YY * scale_momentum, dim=1)  # Use momentum temperature for targets
++            log_YY = F.log_softmax(logits_YY * scale_momentum, dim=1)  # Use momentum temperature for targets
++        
++        # Cross-entropy decomposition: H(YY, XY) = h(YY) + DKL(YY || XY)
++        cross_entropy = -(YY * logp_XY).sum(dim=1)  # [total_conditions] - H(YY, XY)
++        target_entropy = -(YY * log_YY).sum(dim=1)  # [total_conditions] - h(YY) = -sum(YY * log(YY))
++        kl_divs = cross_entropy - target_entropy  # [total_conditions] - DKL(YY || XY)
++        
++        # Forward soft contrastive loss
++        forward_losses = cross_entropy  # [total_conditions]
++        
++        # Sum soft-loss per molecule, divide by number of conditions in that molecule
++        molecule_loss_sums = torch.matmul(molecule_mask.float(), forward_losses)  # [n_molecules]
++        conditions_per_molecule = molecule_mask.sum(dim=1).float()  # [n_molecules]
++        molecule_loss_averages = molecule_loss_sums / conditions_per_molecule.clamp(min=1)  # [n_molecules]
++        loss_forward = molecule_loss_averages.mean()
++        
++        # Backward: hard contrastive loss (genomic→mol)
++        all_condition_labels = torch.arange(n_conditions, device=device)
++        all_condition_losses_backward = F.cross_entropy(logits_ac.T, all_condition_labels, reduction='none')
++        
++        # Group and average same way as forward
++        molecule_loss_sums_backward = torch.matmul(molecule_mask.float(), all_condition_losses_backward)
++        molecule_loss_averages_backward = molecule_loss_sums_backward / conditions_per_molecule.clamp(min=1)
++        loss_backward = molecule_loss_averages_backward.mean()
++        
++        # Collapse detection for genomic embeddings
++        if is_training:
++            check_collapse(emb_c, logits_YY, self, "genomic", eps=1e-6,
++                          cross_entropy=cross_entropy, target_entropy=target_entropy, kl_divs=kl_divs)
++        
++        return 0.5 * (loss_forward + loss_backward), loss_forward, loss_backward
++
++    def _compute_contrastive_losses(self, logits_ab, logits_ac, emb_a, emb_b, emb_c, inputs, step_name):
++        """Compute bidirectional contrastive losses with soft/hard morphological losses."""
++        loss = 0
++        n_valid_losses = 0
++        logs = {}
++                
++        # 1. Morphological contrastive loss (soft forward + hard backward)
++        if logits_ab is not None and emb_b is not None:
++            b_valid = ~torch.all(inputs['x_b'] == -1, dim=1)
++            if b_valid.any():
++                morphological_loss, loss_forward, loss_backward = self._compute_morphological_contrastive_loss(
++                    logits_ab, emb_b, b_valid, step_name == "train"
++                )
++                
++                loss += morphological_loss
++                n_valid_losses += 1
++                logs.update({
++                    "morphological_loss": morphological_loss.cpu().detach(),
++                    "loss_ab_soft": loss_forward.cpu().detach(),
++                    "loss_ba_hard": loss_backward.cpu().detach(),
++                })
++        
++        # 2. Genomic contrastive loss (soft forward + hard backward)
++        if logits_ac is not None and logits_ac.size(0) > 0 and emb_c is not None and emb_a is not None:
++            # Get batch indices for genomic soft contrastive loss
++            batch_indices = inputs['batch_indices']
++            
++            genomic_loss, loss_forward, loss_backward = self._compute_genomic_soft_contrastive_loss(
++                logits_ac, emb_c, batch_indices, step_name == "train"
++            )
++            
++            loss += genomic_loss
++            n_valid_losses += 1
++            
++            # Get molecular grouping info for logging
++            unique_batch_indices, inverse_indices = torch.unique(batch_indices, return_inverse=True)
++            n_molecules_with_genomic = len(unique_batch_indices)
++            n_conditions = logits_ac.size(0)
++            
++            logs.update({
++                "genomic_loss": genomic_loss.cpu().detach(),
++                "loss_ac_soft": loss_forward.cpu().detach(), 
++                "loss_ca_hard": loss_backward.cpu().detach(),
++                "n_genomic_conditions": n_conditions,
++                "n_molecules_with_genomic": n_molecules_with_genomic,
++                "avg_conditions_per_molecule": n_conditions / max(n_molecules_with_genomic, 1),
++            })
++        else:
++            # When no genomic data is available, only include the count metrics
++            logs.update({
++                "n_genomic_conditions": 0,
++                "n_molecules_with_genomic": 0,
++                "avg_conditions_per_molecule": 0
++            })
++        
++        # Average loss over number of modalities
++        loss = loss / max(n_valid_losses, 1)
++        logs["n_valid_losses"] = n_valid_losses
++        
++        return loss, logs
+ 
+diff --git a/mocop/steps.py b/mocop/steps.py
+index ab4f6fc..f34207d 100644
+--- a/mocop/steps.py
++++ b/mocop/steps.py
+@@ -25,8 +25,20 @@ def _validation_epoch_end(self, validation_step_outputs, is_regression=False):
+             validation_step_output = [validation_step_output]
+             
+         all_logs = [o["log"] for o in validation_step_output]
+-        all_logs = {k: [log[k] for log in all_logs] for k in all_logs[0].keys()}
+-        all_logs = {k: np.mean(v) for k, v in all_logs.items()}
++        
++        # Collect all unique keys across all batches
++        all_keys = set()
++        for log in all_logs:
++            all_keys.update(log.keys())
++        
++        # For each key, collect values from batches that have that key
++        aggregated_logs = {}
++        for k in all_keys:
++            values = [log[k] for log in all_logs if k in log]
++            if values:  # Only add if there are values
++                aggregated_logs[k] = np.mean(values)
++        
++        all_logs = aggregated_logs
+ 
+         if (
+             "outputs" in validation_step_output[0]
+@@ -84,8 +96,10 @@ def _validation_epoch_end_all_cell_lines(self, validation_step_outputs, is_regre
+         # Filter and calculate means only for desired metrics
+         filtered_logs = {}
+         for metric in desired_metrics:
+-            if metric in all_logs[0]:
+-                filtered_logs[metric] = np.mean([log[metric] for log in all_logs])
++            # Check if metric exists in any of the logs, not just the first one
++            values = [log[metric] for log in all_logs if metric in log]
++            if values:  # Only add if there are values
++                filtered_logs[metric] = np.mean(values)
+ 
+         if i != 0:
+             filtered_logs = {f"{k}_{i}": v for k, v in filtered_logs.items()}
+diff --git a/mocop/testing.py b/mocop/testing.py
+index a1c6cb4..e24bb31 100644
+--- a/mocop/testing.py
++++ b/mocop/testing.py
+@@ -28,9 +28,19 @@ def test(cfg: Union[Dict, DictConfig]) -> nn.Module:
+         model.load_state_dict(ckpt["state_dict"])
+ 
+     trainer = hydra.utils.instantiate(cfg.trainer)
+-    test_metrics = trainer.validate(
+-        model=model, dataloaders=dataloaders["test"], verbose=True
+-    )
++    
++    # Check if test set exists and has samples
++    test_dataloader = dataloaders.get("test")
++    if test_dataloader is None or len(test_dataloader.dataset) == 0:
++        print("Warning: Test set is empty or doesn't exist. Using validation set for testing.")
++        test_metrics = trainer.validate(
++            model=model, dataloaders=dataloaders["val"], verbose=True
++        )
++    else:
++        print(f"Using test set with {len(test_dataloader.dataset)} samples for testing.")
++        test_metrics = trainer.validate(
++            model=model, dataloaders=dataloaders["test"], verbose=True
++        )
+     
+     # Use the specified test results directory and filename
+     test_dir = cfg.test_results_dir
+diff --git a/mocop/training.py b/mocop/training.py
+index 2a540c3..4df6ecc 100644
+--- a/mocop/training.py
++++ b/mocop/training.py
+@@ -26,9 +26,24 @@ def build_dataloaders(
+     dataset: Dataset,
+     batch_size: int,
+     splits: Dict[str, str] = None,
++    train_size: float = 0.8,
++    val_size: float = 0.1,
++    test_size: float = 0.1,
++    split_method: str = "random", # random, butina, scaffold
++    butina_threshold: float = 0.7,
++    seed: int = 42,
+     **kwargs,
+ ) -> Dict[str, DataLoader]:
+-    split_dataset = _split_data(dataset, splits=splits)
++
++    split_dataset = _split_data(dataset, 
++                            splits=splits, 
++                            train_size=train_size,
++                            val_size=val_size,
++                            test_size=test_size,
++                            split_method=split_method,
++                            butina_threshold=butina_threshold,
++                            seed=seed,
++                            **kwargs)
+     dataloaders = {}
+     
+     # Get collate_fn from dataset if it exists
+@@ -79,7 +94,7 @@ def train(cfg: Union[Dict, DictConfig]) -> nn.Module:
+     _ = model(**mock_inputs["inputs"])
+ 
+     trainer = hydra.utils.instantiate(cfg.trainer)
+-    trainer.logger.experiment["model/hyper-parameters"] = (OmegaConf.to_container(cfg))
++    #trainer.logger.experiment["model/hyper-parameters"] = (OmegaConf.to_container(cfg))
+     print("Hyperparameters logged to Neptune.")
+     trainer.fit(model, dataloaders["train"], dataloaders["val"])
+ 
+@@ -131,7 +146,9 @@ class TrainingMonitor(pl.Callback):
+         # 2. Perform a forward pass to get the logits
+         pl_module.eval() # Set model to evaluation mode
+         with torch.no_grad():
+-            logits_ab, _, _ = pl_module.forward(**sample_batch["inputs"])
++            logits_ab, logits_ac = pl_module.forward(**sample_batch["inputs"])
++            if logits_ab is None:
++                return  # No morphological data to visualize
+             temperature = pl_module.temperature
+             scaled_logits_ab = logits_ab * temperature
+         pl_module.train() # Set model back to training mode
+@@ -157,7 +174,7 @@ class TrainingMonitor(pl.Callback):
+ 
+     def on_validation_epoch_end(self, trainer, pl_module):
+         """
+-        Called at the end of the training epoch.
++        Called at the end of the validation epoch.
+         Generates and logs plots.
+         """
+         # Ensure the logger is available
+@@ -172,7 +189,9 @@ class TrainingMonitor(pl.Callback):
+         # 2. Perform a forward pass to get the logits
+         pl_module.eval() # Set model to evaluation mode
+         with torch.no_grad():
+-            logits_ab, _, _ = pl_module.forward(**sample_batch["inputs"])
++            logits_ab, logits_ac = pl_module.forward(**sample_batch["inputs"])
++            if logits_ab is None:
++                return  # No morphological data to visualize
+             temperature = pl_module.temperature
+             scaled_logits_ab = logits_ab * temperature
+         pl_module.train() # Set model back to training mode
+diff --git a/models/vae.py b/models/vae.py
+index adf9f0b..8c4163c 100644
+--- a/models/vae.py
++++ b/models/vae.py
+@@ -20,16 +20,24 @@ class VAEEncoder(nn.Module):
+         dropout: float = 0.1,
+         norm_type: Optional[str] = "batchnorm",  # "batchnorm", "layernorm", None
+         model_type: str = "vae",  # "vae" or "ae"
++        # Conditional parameters for genomic data
++        conditional_mode: bool = False,
++        conditional_dim: int = 0,  # cell + dose + time embedding dimensions
+     ):
+         super().__init__()
+         
+         self.input_dim = input_dim
+         self.latent_dim = latent_dim
+         self.model_type = model_type
++        self.conditional_mode = conditional_mode
++        self.conditional_dim = conditional_dim
++        
++        # Adjust input dimension if using conditional mode
++        actual_input_dim = input_dim + conditional_dim if conditional_mode else input_dim
+         
+         # Build encoder layers
+         layers = []
+-        prev_dim = input_dim
++        prev_dim = actual_input_dim
+         
+         for i, hidden_dim in enumerate(hidden_dims):
+             # Linear layer
+@@ -60,8 +68,14 @@ class VAEEncoder(nn.Module):
+             # Single deterministic latent layer for AE
+             self.fc_latent = nn.Linear(prev_dim, latent_dim)
+     
+-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
++    def forward(self, x: torch.Tensor, conditional_features: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
+         """Forward pass returning mean and log variance (VAE) or latent and zeros (AE)."""
++        # Concatenate conditional features if in conditional mode
++        if self.conditional_mode and conditional_features is not None:
++            x = torch.cat([x, conditional_features], dim=-1)
++        elif self.conditional_mode and conditional_features is None:
++            raise ValueError("Conditional features required when conditional_mode=True")
++        
+         h = self.encoder(x)
+         
+         if self.model_type == "vae":
+@@ -146,12 +160,55 @@ class JUMPVAE(pl.LightningModule):
+         T_max: int = 10,                # Used if scheduler_type == "cosine"
+         eta_min: float = 0.0,           # Used if scheduler_type == "cosine"
+         warmup_epochs: int = 0,         # Used if scheduler_type == "cosine_with_warmup"
++        # Conditional parameters for genomic data
++        conditional_mode: bool = False,
++        conditional_dim: int = 0,  # total conditional embedding dimensions
+         **kwargs
+     ):
+         super().__init__()
+         self.save_hyperparameters()
+         
+         self.model_type = model_type
++        self.conditional_mode = conditional_mode
++        
++        # Set up embedding layers if in conditional mode
++        if conditional_mode:
++            # Get embedding dimensions from hyperparameters
++            # These should be passed when creating the model
++            cell_embedding_dim = kwargs.get('cell_embedding_dim', 32)
++            dose_embedding_dim = kwargs.get('dose_embedding_dim', 32) 
++            time_embedding_dim = kwargs.get('time_embedding_dim', 32)
++            n_cell_lines = kwargs.get('n_cell_lines', 24)
++            n_dose_levels = kwargs.get('n_dose_levels', 6)
++            n_time_points = kwargs.get('n_time_points', 2)
++            
++            # Create embedding layers
++            self.cell_embedding = nn.Embedding(
++                num_embeddings=n_cell_lines + 1,  # +1 for padding
++                embedding_dim=cell_embedding_dim,
++                padding_idx=0
++            )
++            self.dose_embedding = nn.Embedding(
++                num_embeddings=n_dose_levels + 1,  # +1 for padding
++                embedding_dim=dose_embedding_dim,
++                padding_idx=0
++            )
++            self.time_embedding = nn.Embedding(
++                num_embeddings=n_time_points + 1,  # +1 for padding
++                embedding_dim=time_embedding_dim,
++                padding_idx=0
++            )
++            
++            # Total conditional dimension
++            total_conditional_dim = cell_embedding_dim + dose_embedding_dim + time_embedding_dim
++            
++            print(f"Conditional VAE setup:")
++            print(f"  - Cell lines: {n_cell_lines} -> {cell_embedding_dim}D embeddings")
++            print(f"  - Dose levels: {n_dose_levels} -> {dose_embedding_dim}D embeddings")
++            print(f"  - Time points: {n_time_points} -> {time_embedding_dim}D embeddings")
++            print(f"  - Total conditional dim: {total_conditional_dim}")
++        else:
++            total_conditional_dim = conditional_dim
+         
+         # Model components
+         self.encoder = VAEEncoder(
+@@ -161,6 +218,8 @@ class JUMPVAE(pl.LightningModule):
+             dropout=dropout,
+             norm_type=norm_type,
+             model_type=model_type,
++            conditional_mode=conditional_mode,
++            conditional_dim=total_conditional_dim,
+         )
+         
+         self.decoder = VAEDecoder(
+@@ -186,9 +245,22 @@ class JUMPVAE(pl.LightningModule):
+         else:  # AE mode
+             return mu  # Deterministic latent code
+     
+-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
++    def forward(self, x: torch.Tensor, conditional_features: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+         """Forward pass through VAE/AE."""
+-        mu, logvar = self.encoder(x)
++        if self.conditional_mode and conditional_features is not None:
++            # Embed conditional features
++            # conditional_features shape: [batch_size, 3] where 3 = [cell_idx, dose_idx, time_idx]
++            cell_emb = self.cell_embedding(conditional_features[:, 0])  # [batch_size, cell_embedding_dim]
++            dose_emb = self.dose_embedding(conditional_features[:, 1])  # [batch_size, dose_embedding_dim]
++            time_emb = self.time_embedding(conditional_features[:, 2])  # [batch_size, time_embedding_dim]
++            
++            # Concatenate embeddings
++            embedded_conditionals = torch.cat([cell_emb, dose_emb, time_emb], dim=-1)  # [batch_size, total_conditional_dim]
++            
++            mu, logvar = self.encoder(x, embedded_conditionals)
++        else:
++            mu, logvar = self.encoder(x, conditional_features)
++        
+         z = self.reparameterize(mu, logvar)
+         x_recon = self.decoder(z)
+         return x_recon, mu, logvar
+@@ -217,10 +289,18 @@ class JUMPVAE(pl.LightningModule):
+         
+         return total_loss, recon_loss, kl_loss
+     
+-    def training_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
++    def training_step(self, batch, batch_idx: int) -> torch.Tensor:
+         """Training step."""
+-        x = batch
+-        x_recon, mu, logvar = self.forward(x)
++        if self.conditional_mode:
++            # Expect batch to be a dict with 'genomic_features' and 'conditional_features'
++            x = batch['genomic_features']
++            conditional_features = batch['conditional_features']
++            x_recon, mu, logvar = self.forward(x, conditional_features)
++        else:
++            # Standard mode - batch is just the tensor
++            x = batch
++            x_recon, mu, logvar = self.forward(x)
++        
+         
+         total_loss, recon_loss, kl_loss = self.loss_function(x_recon, x, mu, logvar)
+         
+@@ -237,10 +317,17 @@ class JUMPVAE(pl.LightningModule):
+     
+         return total_loss
+     
+-    def validation_step(self, batch: torch.Tensor, batch_idx: int) -> Dict[str, torch.Tensor]:
++    def validation_step(self, batch, batch_idx: int) -> Dict[str, torch.Tensor]:
+         """Validation step."""
+-        x = batch
+-        x_recon, mu, logvar = self.forward(x)
++        if self.conditional_mode:
++            # Expect batch to be a dict with 'genomic_features' and 'conditional_features'
++            x = batch['genomic_features']
++            conditional_features = batch['conditional_features']
++            x_recon, mu, logvar = self.forward(x, conditional_features)
++        else:
++            # Standard mode - batch is just the tensor
++            x = batch
++            x_recon, mu, logvar = self.forward(x)
+         
+         total_loss, recon_loss, kl_loss = self.loss_function(x_recon, x, mu, logvar)
+         
+@@ -261,10 +348,17 @@ class JUMPVAE(pl.LightningModule):
+             'val_mae': mae,
+         }
+     
+-    def test_step(self, batch: torch.Tensor, batch_idx: int) -> Dict[str, torch.Tensor]:
++    def test_step(self, batch, batch_idx: int) -> Dict[str, torch.Tensor]:
+         """Test step - similar to validation step but for testing."""
+-        x = batch
+-        x_recon, mu, logvar = self.forward(x)
++        if self.conditional_mode:
++            # Expect batch to be a dict with 'genomic_features' and 'conditional_features'
++            x = batch['genomic_features']
++            conditional_features = batch['conditional_features']
++            x_recon, mu, logvar = self.forward(x, conditional_features)
++        else:
++            # Standard mode - batch is just the tensor
++            x = batch
++            x_recon, mu, logvar = self.forward(x)
+         
+         total_loss, recon_loss, kl_loss = self.loss_function(x_recon, x, mu, logvar)
+         
+@@ -359,9 +453,9 @@ class JUMPVAE(pl.LightningModule):
+             "lr_scheduler": scheduler_cfg,
+         }
+     
+-    def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
++    def encode(self, x: torch.Tensor, conditional_features: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
+         """Encode input to latent space."""
+-        return self.encoder(x)
++        return self.encoder(x, conditional_features)
+     
+     def decode(self, z: torch.Tensor) -> torch.Tensor:
+         """Decode latent representation to reconstruction."""
+@@ -394,6 +488,9 @@ def create_vae_model(
+     weight_decay: float = 1e-4,
+     beta: float = 1.0,
+     model_type: str = "vae",  # "vae" or "ae"
++    # Conditional parameters
++    conditional_mode: bool = False,
++    conditional_dim: int = 0,
+     **kwargs
+ ) -> JUMPVAE:
+     """Create VAE/AE model with predefined architectures."""
+@@ -421,5 +518,7 @@ def create_vae_model(
+         weight_decay=weight_decay,
+         beta=beta,
+         model_type=model_type,
++        conditional_mode=conditional_mode,
++        conditional_dim=conditional_dim,
+         **kwargs
+     ) 
+\ No newline at end of file
+diff --git a/scripts/evaluate_vae_triton.sh b/scripts/evaluate_vae_triton.sh
+index ca785dc..8efa549 100644
+--- a/scripts/evaluate_vae_triton.sh
++++ b/scripts/evaluate_vae_triton.sh
+@@ -1,23 +1,21 @@
+ #!/bin/bash -l
+-#SBATCH --time=00:15:00
+-#SBATCH --mem=32G
++#SBATCH --time=02:00:00
++#SBATCH --mem=128G
+ #SBATCH --cpus-per-task=4
+ #SBATCH --gres=gpu:1
+ #SBATCH --job-name=eval_vae
+ #SBATCH --output=/scratch/work/masooda1/Multi_Modal_Contrastive/script_outputs/vae_evaluation.out
+ 
+-# Set up environment
+-VENV_PATH="/scratch/work/masooda1/.conda_envs/mocop"
+-output_dir="/scratch/work/masooda1/Multi_Modal_Contrastive/evaluation_results"
+-
+ # Arguments
+ CHECKPOINT_PATH="$1"
+ CONFIG_FILE="$2"
++OUTPUT_DIR="$3"
++VENV_PATH="$4"
+ 
+-if [ -z "$CHECKPOINT_PATH" ] || [ -z "$CONFIG_FILE" ]; then
++if [ -z "$CHECKPOINT_PATH" ] || [ -z "$CONFIG_FILE" ] || [ -z "$OUTPUT_DIR" ] || [ -z "$VENV_PATH" ]; then
+     echo "Error: Missing arguments!"
+-    echo "Usage: sbatch $0 <checkpoint_path> <config_file>"
+-    echo "Example: sbatch $0 vae_logs/jump_ae_vanilla/checkpoints/last.ckpt configs/train_vae_config.yaml"
++    echo "Usage: sbatch $0 <checkpoint_path> <config_file> <output_dir> <venv_path>"
++    echo "Example: sbatch $0 vae_logs/jump_ae_vanilla/checkpoints/last.ckpt configs/train_vae_config.yaml evaluation_results/jump_ae_best mocop"
+     exit 1
+ fi
+ 
+@@ -27,6 +25,8 @@ echo "Node: $SLURMD_NODENAME"
+ echo "GPU: $CUDA_VISIBLE_DEVICES"
+ echo "Checkpoint: $CHECKPOINT_PATH"
+ echo "Config file: $CONFIG_FILE"
++echo "Output directory: $OUTPUT_DIR"
++echo "Virtual environment: $VENV_PATH"
+ 
+ # Activate conda environment
+ echo "Activating conda environment: $VENV_PATH"
+@@ -38,13 +38,13 @@ if [ $? -ne 0 ]; then
+ fi
+ 
+ # Create output directory
+-mkdir -p evaluation_results
++mkdir -p "$OUTPUT_DIR"
+ 
+ # Run evaluation
+ echo "Starting VAE evaluation..."
+ python evaluate_vae.py \
+     --checkpoint_path "$CHECKPOINT_PATH" \
+     --config "$CONFIG_FILE" \
+-    --output_dir evaluation_results
++    --output_dir "$OUTPUT_DIR"
+ 
+ echo "Evaluation completed at: $(date)" 
+\ No newline at end of file
+diff --git a/scripts/train_vae_triton.sh b/scripts/train_vae_triton.sh
+index aea531e..07ae133 100644
+--- a/scripts/train_vae_triton.sh
++++ b/scripts/train_vae_triton.sh
+@@ -1,21 +1,27 @@
+ #!/bin/bash -l
+-#SBATCH --time=00:30:00
++#SBATCH --time=24:00:00
+ #SBATCH --mem=64G
+ #SBATCH --cpus-per-task=4
+ #SBATCH --gres=gpu:1
+ #SBATCH --job-name=jump_vae
+ #SBATCH --output=/scratch/work/masooda1/Multi_Modal_Contrastive/script_outputs/vae_training.out
+ 
+-# Set up environment
+-VENV_PATH="/scratch/work/masooda1/.conda_envs/mocop"
+-
+-# Config file (must be passed as argument)
++# Arguments: config_file conda_env
+ CONFIG_FILE="$1"
++CONDA_ENV="$2"
+ 
++# Validate arguments
+ if [ -z "$CONFIG_FILE" ]; then
+     echo "Error: No config file provided!"
+-    echo "Usage: sbatch $0 <config_file_path>"
+-    echo "Example: sbatch $0 configs/train_vae_config.yaml"
++    echo "Usage: sbatch $0 <config_file_path> <conda_env>"
++    echo "Example: sbatch $0 configs/train_vae_config.yaml mocop"
++    exit 1
++fi
++
++if [ -z "$CONDA_ENV" ]; then
++    echo "Error: No conda environment provided!"
++    echo "Usage: sbatch $0 <config_file_path> <conda_env>"
++    echo "Example: sbatch $0 configs/train_vae_config.yaml mocop"
+     exit 1
+ fi
+ 
+@@ -24,11 +30,12 @@ echo "Job ID: $SLURM_JOB_ID"
+ echo "Node: $SLURMD_NODENAME"
+ echo "GPU: $CUDA_VISIBLE_DEVICES"
+ echo "Config file: $CONFIG_FILE"
++echo "Conda environment: $CONDA_ENV"
+ 
+ # Activate conda environment
+-echo "Activating conda environment: $VENV_PATH"
++echo "Activating conda environment: $CONDA_ENV"
+ module load mamba
+-source activate "$VENV_PATH"
++source activate "$CONDA_ENV"
+ if [ $? -ne 0 ]; then
+     echo "Error: Failed to activate conda environment."
+     exit 1
+diff --git a/scripts/vae_sweep_triton.sh b/scripts/vae_sweep_triton.sh
+deleted file mode 100644
+index e9c2446..0000000
+--- a/scripts/vae_sweep_triton.sh
++++ /dev/null
+@@ -1,172 +0,0 @@
+-#!/bin/bash
+-#SBATCH --time=10:00:00
+-#SBATCH --mem=64G
+-#SBATCH --cpus-per-task=4
+-#SBATCH --gres=gpu:1
+-#SBATCH --array=0-17    # Run all 36 combinations (3 arch × 3 norm × 4 LR)
+-#SBATCH --output=/scratch/work/masooda1/Multi_Modal_Contrastive/script_outputs/vae_hp_search_%a.out
+-
+-# Set up environment
+-WORK_DIR="/scratch/work/masooda1/Multi_Modal_Contrastive"
+-DATA_PATH="/scratch/work/masooda1/Multi_Modal_Contrastive/data/dummy_data/cell_fetures_with_smiles_2000.parquet"
+-VENV_PATH="/scratch/work/masooda1/.conda_envs/mocop"
+-LOG_DIR="/scratch/work/masooda1/Multi_Modal_Contrastive/vae_logs"
+-BASE_CONFIG="/scratch/work/masooda1/Multi_Modal_Contrastive/configs/train_ae_config.yaml"
+-
+-# Control model weight saving for the entire sweep
+-SAVE_MODEL_WEIGHTS=false  # Set to true to save model weights, false for JSON-only results
+-
+-# Define hyperparameter arrays (from vae_sweep.yaml with some discretized)
+-MODEL_TYPES=("ae" "vae")
+-ARCHITECTURES=("vanilla" "medium" "large")
+-NORM_TYPES=("batchnorm" "layernorm" "none")
+-BETA_VALUES=(0.1 0.5 1.0 5.0 10.0)  
+-#LR_VALUES=(0.0001 0.001 0.005 0.01)  
+-LR_VALUES=(0.00001 0.00005)  
+-
+-LATENT_DIM=128  # Fixed
+-DROPOUT_VALUES=(0.0)  # Fixed to single value
+-WD_VALUES=(0.0)  # Fixed to single value
+-BATCH_SIZE=64  # Fixed
+-
+-# Build all combinations with single loop structure
+-COMBINATIONS=()
+-
+-for model in "${MODEL_TYPES[@]}"; do
+-  for arch in "${ARCHITECTURES[@]}"; do
+-    for dropout in "${DROPOUT_VALUES[@]}"; do
+-      for norm in "${NORM_TYPES[@]}"; do
+-        for lr in "${LR_VALUES[@]}"; do
+-          for wd in "${WD_VALUES[@]}"; do
+-            if [ "$model" == "vae" ]; then
+-              # VAE: include beta variations
+-              for beta in "${BETA_VALUES[@]}"; do
+-                COMBINATIONS+=("$model,$arch,$LATENT_DIM,$dropout,$norm,$beta,$lr,$wd,$BATCH_SIZE")
+-              done
+-            else
+-              # AE: use fixed beta=1.0 (ignored)
+-              COMBINATIONS+=("$model,$arch,$LATENT_DIM,$dropout,$norm,1.0,$lr,$wd,$BATCH_SIZE")
+-            fi
+-          done
+-        done
+-      done
+-    done
+-  done
+-done
+-
+-TOTAL_COMBINATIONS=${#COMBINATIONS[@]}
+-echo "Total hyperparameter combinations: $TOTAL_COMBINATIONS"
+-
+-# Get this job's combination
+-IDX=$SLURM_ARRAY_TASK_ID
+-if [ $IDX -ge $TOTAL_COMBINATIONS ]; then
+-  echo "SLURM_ARRAY_TASK_ID $IDX exceeds total combinations $TOTAL_COMBINATIONS"
+-  exit 1
+-fi
+-
+-IFS=',' read MODEL_TYPE ARCHITECTURE LATENT_DIM DROPOUT NORM_TYPE BETA LEARNING_RATE WEIGHT_DECAY BATCH_SIZE <<< "${COMBINATIONS[$IDX]}"
+-
+-# Create experiment name to check if results already exist
+-EXP_NAME="vae_hp_${MODEL_TYPE}_${ARCHITECTURE}_lat${LATENT_DIM}_dr${DROPOUT}_${NORM_TYPE}_b${BETA}_lr${LEARNING_RATE}_wd${WEIGHT_DECAY}_bs${BATCH_SIZE}_job${SLURM_ARRAY_TASK_ID}"
+-RESULTS_FILE="$LOG_DIR/$EXP_NAME/results/final_results.json"
+-
+-# Check if this experiment already completed successfully
+-if [ -f "$RESULTS_FILE" ]; then
+-    echo "Experiment $EXP_NAME already completed. Skipping..."
+-    echo "Results found at: $RESULTS_FILE"
+-    exit 0
+-fi
+-
+-echo "Running experiment: $EXP_NAME (results not found, proceeding...)"
+-
+-echo "Hyperparameter search job started at: $(date)"
+-echo "Job Array ID: $SLURM_ARRAY_JOB_ID"
+-echo "Task ID: $SLURM_ARRAY_TASK_ID"
+-echo "Node: $SLURM_NODELIST"
+-echo "GPU: $CUDA_VISIBLE_DEVICES"
+-
+-echo "Hyperparameters for this job:"
+-echo "  Model Type: $MODEL_TYPE"
+-echo "  Architecture: $ARCHITECTURE"
+-echo "  Latent Dim: $LATENT_DIM"
+-echo "  Dropout: $DROPOUT"
+-echo "  Norm Type: $NORM_TYPE"
+-echo "  Beta: $BETA"
+-echo "  Learning Rate: $LEARNING_RATE"
+-echo "  Weight Decay: $WEIGHT_DECAY"
+-echo "  Batch Size: $BATCH_SIZE"
+-
+-# Change to working directory
+-cd $WORK_DIR
+-
+-# Activate conda environment
+-echo "Activating conda environment: $VENV_PATH"
+-module load mamba
+-source activate "$VENV_PATH"
+-if [ $? -ne 0 ]; then
+-    echo "Error: Failed to activate conda environment."
+-    exit 1
+-fi
+-
+-# Create necessary directories
+-mkdir -p $(dirname $SLURM_JOB_OUTPUT)
+-mkdir -p $LOG_DIR
+-
+-# Check if data file exists
+-if [ ! -f "$DATA_PATH" ]; then
+-    echo "Error: Data file not found at $DATA_PATH"
+-    exit 1
+-fi
+-
+-# Check if base config exists
+-if [ ! -f "$BASE_CONFIG" ]; then
+-    echo "Error: Base config not found at $BASE_CONFIG"
+-    exit 1
+-fi
+-
+-echo "Data file found: $DATA_PATH"
+-echo "Base config found: $BASE_CONFIG"
+-
+-# Create temporary config file
+-TMP_CONFIG="/tmp/vae_config_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.yaml"
+-cp $BASE_CONFIG $TMP_CONFIG
+-
+-# Update hyperparameters in the config file using sed
+-sed -i "s/model_type: .*/model_type: \"$MODEL_TYPE\"/" $TMP_CONFIG
+-sed -i "s/architecture: .*/architecture: \"$ARCHITECTURE\"/" $TMP_CONFIG
+-sed -i "s/latent_dim: .*/latent_dim: $LATENT_DIM/" $TMP_CONFIG
+-sed -i "s/dropout: .*/dropout: $DROPOUT/" $TMP_CONFIG
+-sed -i "s/norm_type: .*/norm_type: \"$NORM_TYPE\"/" $TMP_CONFIG
+-sed -i "s/beta: .*/beta: $BETA/" $TMP_CONFIG
+-sed -i "s/learning_rate: .*/learning_rate: $LEARNING_RATE/" $TMP_CONFIG
+-sed -i "s/weight_decay: .*/weight_decay: $WEIGHT_DECAY/" $TMP_CONFIG
+-sed -i "s/batch_size: .*/batch_size: $BATCH_SIZE/" $TMP_CONFIG
+-sed -i "s/save_model_weights: .*/save_model_weights: $SAVE_MODEL_WEIGHTS/" $TMP_CONFIG
+-
+-# Update experiment name to include hyperparameters
+-sed -i "s/experiment_name: .*/experiment_name: \"$EXP_NAME\"/" $TMP_CONFIG
+-
+-# Set CUDA device if available
+-if [ ! -z "$CUDA_VISIBLE_DEVICES" ]; then
+-    echo "CUDA devices available: $CUDA_VISIBLE_DEVICES"
+-    export CUDA_DEVICE_ORDER=PCI_BUS_ID
+-fi
+-
+-echo "Running VAE training with config: $TMP_CONFIG"
+-echo "Experiment name: $EXP_NAME"
+-echo "Save model weights: $SAVE_MODEL_WEIGHTS"
+-    
+-    # Run training
+-srun python train_vae.py --config $TMP_CONFIG
+-
+-# Check if training was successful
+-if [ $? -eq 0 ]; then
+-    echo "Training completed successfully for job $SLURM_ARRAY_TASK_ID"
+-else
+-    echo "Training failed for job $SLURM_ARRAY_TASK_ID"
+-fi
+-
+-# Clean up
+-rm -f $TMP_CONFIG
+-
+-echo "Hyperparameter search job completed at: $(date)" 
+\ No newline at end of file
+diff --git a/train_vae.py b/train_vae.py
+index 6596a75..0be8356 100644
+--- a/train_vae.py
++++ b/train_vae.py
+@@ -492,6 +492,207 @@ class GenomicDataset(Dataset):
+         return torch.from_numpy(features)
+ 
+ 
++class ConditionalGenomicDataset(Dataset):
++    """Dataset class for conditional genomic (LINCS L1000) data with cell line, dose, and time embeddings."""
++    
++    def __init__(self, config: Config):
++        """Initialize conditional genomic dataset from config."""
++        data_config = config.data
++        
++        # Use genomic_data_path if specified, otherwise fallback to data_path
++        self.data_path = data_config.get('genomic_data_path', data_config['data_path'])
++        self.normalize = data_config['normalize']
++        self.random_seed = config.training['seed']
++        
++        # Molecule filtering (exclude controls/specific molecules)
++        self.exclude_molecules = data_config.get('exclude_molecules', [])
++        self.molecule_id_column = data_config.get('molecule_id_column', 'Metadata_InChIKey')
++        
++        # Cell line filtering options
++        self.target_cell_line = data_config.get('target_cell_line', None)  # Filter to specific cell line
++        self.cell_line_col = "Metadata_cell_iname"
++        
++        # Load and process data
++        self._load_data()
++        
++        # Set up for molecule-wise sampling
++        self.smiles_col = "Metadata_SMILES"
++        if self.smiles_col in self.df.columns:
++            self.unique_smiles = self.df[self.smiles_col].dropna().unique().tolist()
++        else:
++            raise ValueError("SMILES column not found in the genomic dataset")
++        
++        # Set up conditional embeddings (similar to CellLineTripleInputEncoder)
++        self._setup_conditional_mappings()
++        
++        # Pre-compute molecule indices for faster sampling
++        self._precompute_indices()
++        
++        print(f"Conditional genomic dataset created with {len(self.unique_smiles)} unique molecules")
++        if self.target_cell_line:
++            print(f"Filtered to cell line: {self.target_cell_line}")
++        print(f"Conditional embedding dimensions: cell={len(self.cell_line_to_idx)}, dose={len(self.dose_to_idx)}, time={len(self.time_to_idx)}")
++    
++    def _load_data(self):
++        """Load and preprocess the conditional genomic data."""
++        print(f"Loading conditional genomic data from {self.data_path}")
++        
++        # Load data (genomic data is typically in parquet format)
++        if self.data_path.endswith('.parquet'):
++            self.df = pd.read_parquet(self.data_path)
++        elif self.data_path.endswith('.csv'):
++            self.df = pd.read_csv(self.data_path)
++        else:
++            raise ValueError("Genomic data file must be .parquet or .csv")
++        
++        print(f"Loaded conditional genomic dataframe with shape: {self.df.shape}")
++        
++        # Filter to specific cell line if specified
++        if self.target_cell_line:
++            if self.cell_line_col in self.df.columns:
++                original_shape = self.df.shape[0]
++                self.df = self.df[self.df[self.cell_line_col] == self.target_cell_line].reset_index(drop=True)
++                print(f"Filtered to {self.target_cell_line}: {original_shape} → {self.df.shape[0]} rows")
++            else:
++                print(f"Warning: Cell line column '{self.cell_line_col}' not found, skipping cell line filtering")
++        
++        # Filter out excluded molecules if specified
++        if self.exclude_molecules:
++            self._filter_molecules()
++        
++        # Get feature columns (non-metadata) - genomic features
++        self.feature_cols = [c for c in self.df.columns if 'Metadata' not in c]
++        
++        print(f"Genomic feature columns: {len(self.feature_cols)}")
++        self.feature_dim = len(self.feature_cols)
++        
++        # Extract features as numpy array for fast access
++        self.features_array = self.df[self.feature_cols].values.astype(np.float32)
++        
++        # Handle NaN values once during initialization
++        self.features_array = np.where(np.isnan(self.features_array), 0.0, self.features_array)
++        
++        # Store normalization parameters and pre-normalize if enabled
++        if self.normalize:
++            self.feature_mean = np.mean(self.features_array, axis=0, keepdims=True)
++            self.feature_std = np.std(self.features_array, axis=0, keepdims=True)
++            # Avoid division by zero
++            self.feature_std = np.where(self.feature_std == 0, 1.0, self.feature_std)
++            
++            # Pre-normalize all features for faster access
++            self.features_array = (self.features_array - self.feature_mean) / self.feature_std
++            print("Computed conditional genomic normalization statistics and pre-normalized all features")
++        else:
++            print("Conditional genomic features extracted as numpy array (no normalization)")
++    
++    def _filter_molecules(self):
++        """Filter out excluded molecules from the conditional genomic dataset."""
++        original_shape = self.df.shape
++        
++        # Check if the specified molecular ID column exists
++        if self.molecule_id_column not in self.df.columns:
++            available_cols = [col for col in self.df.columns if 'Metadata' in col]
++            raise ValueError(
++                f"Molecular ID column '{self.molecule_id_column}' not found in conditional genomic dataset. "
++                f"Available metadata columns: {available_cols}"
++            )
++        
++        before_count = len(self.df)
++        
++        # Filter out molecules in exclude list
++        excluded_mask = self.df[self.molecule_id_column].isin(self.exclude_molecules)
++        excluded_count = excluded_mask.sum()
++        
++        if excluded_count > 0:
++            self.df = self.df[~excluded_mask].reset_index(drop=True)
++            after_count = len(self.df)
++            
++            print(f"Filtered conditional genomic data using {self.molecule_id_column}:")
++            print(f"  - Excluded {excluded_count} rows containing {len(self.exclude_molecules)} control molecules")
++            print(f"  - Dataset size: {before_count} → {after_count} rows")
++        else:
++            print(f"No molecules found to exclude from conditional genomic data using {self.molecule_id_column}")
++        
++        if self.df.shape[0] < original_shape[0] * 0.5:
++            print(f"⚠️  WARNING: Filtering removed {((original_shape[0] - self.df.shape[0]) / original_shape[0] * 100):.1f}% of conditional genomic data")
++    
++    def _setup_conditional_mappings(self):
++        """Set up mappings for cell lines, doses, and time points."""
++        # Cell line mapping
++        unique_cell_lines = sorted(self.df[self.cell_line_col].unique())
++        self.cell_line_to_idx = {cell: idx + 1 for idx, cell in enumerate(unique_cell_lines)}  # Start from 1, 0 is padding
++        
++        # Dose mapping
++        unique_doses = sorted(self.df['Metadata_Dose_Level'].unique())
++        self.dose_to_idx = {dose: idx + 1 for idx, dose in enumerate(unique_doses)}  # Start from 1, 0 is padding
++        
++        # Time mapping
++        unique_times = sorted(self.df['Metadata_pert_time'].unique())
++        self.time_to_idx = {time: idx + 1 for idx, time in enumerate(unique_times)}  # Start from 1, 0 is padding
++        
++        print(f"Created conditional mappings:")
++        print(f"  - Cell lines: {len(unique_cell_lines)} -> indices 1-{len(unique_cell_lines)}")
++        print(f"  - Doses: {len(unique_doses)} -> indices 1-{len(unique_doses)}")
++        print(f"  - Times: {len(unique_times)} -> indices 1-{len(unique_times)}")
++    
++    def _precompute_indices(self):
++        """Pre-compute indices for each molecule to eliminate pandas operations in __getitem__."""
++        print("Pre-computing conditional genomic molecule indices...")
++        self.smiles_to_indices = {}
++        for smiles in self.unique_smiles:
++            indices = self.df[self.df[self.smiles_col] == smiles].index.tolist()
++            self.smiles_to_indices[smiles] = indices
++        
++        # Initialize a single random number generator
++        self.rng = np.random.default_rng(self.random_seed)
++        print(f"Pre-computed conditional genomic indices for {len(self.unique_smiles)} molecules")
++    
++    def __len__(self):
++        return len(self.unique_smiles)
++    
++    def __getitem__(self, index):
++        """Get a molecule-wise sample from conditional genomic data with embeddings."""
++        smiles = self.unique_smiles[index]
++        
++        # Get pre-computed row indices for this SMILES (no pandas filtering!)
++        row_indices = self.smiles_to_indices[smiles]
++        
++        # Use consistent approach for proper randomness with seed_everything()
++        random_state = self.rng.integers(0, 2**32-1)
++        temp_rng = np.random.default_rng(random_state)
++        selected_row_idx = temp_rng.choice(row_indices)
++        
++        # Get features directly from pre-processed numpy array (no pandas!)
++        genomic_features = self.features_array[selected_row_idx].copy()
++        
++        # Get conditional information from the selected row
++        row = self.df.iloc[selected_row_idx]
++        cell_line = row[self.cell_line_col]
++        dose = row['Metadata_Dose_Level']
++        time = row['Metadata_pert_time']
++        
++        # Convert to embedding indices
++        cell_idx = self.cell_line_to_idx[cell_line]
++        dose_idx = self.dose_to_idx[dose]
++        time_idx = self.time_to_idx[time]
++        
++        # Create conditional features tensor (we'll embed these in the model)
++        conditional_features = torch.tensor([cell_idx, dose_idx, time_idx], dtype=torch.long)
++        
++        return {
++            'genomic_features': torch.from_numpy(genomic_features),
++            'conditional_features': conditional_features
++        }
++    
++    def get_embedding_dims(self):
++        """Get the dimensions for embedding layers."""
++        return {
++            'n_cell_lines': len(self.cell_line_to_idx),
++            'n_dose_levels': len(self.dose_to_idx),
++            'n_time_points': len(self.time_to_idx)
++        }
++
++
+ class JUMPDataModule(pl.LightningDataModule):
+     """Data module for JUMP Cell Painting dataset using build_dataloaders with predefined splits."""
+     
+@@ -570,6 +771,10 @@ class GenomicDataModule(pl.LightningDataModule):
+         self.feature_dim = None
+         self.dataloaders = None
+         self.dataset = None
++        
++        # Check if conditional mode is enabled
++        self.conditional_mode = config.model.get('conditional_mode', False)
++        self.embedding_dims = None
+     
+     def prepare_data(self):
+         """Download or prepare genomic data if needed."""
+@@ -594,8 +799,14 @@ class GenomicDataModule(pl.LightningDataModule):
+             
+         print("Setting up genomic data module...")
+         
+-        # Create genomic dataset
+-        self.dataset = GenomicDataset(self.config)
++        # Create genomic dataset (conditional or regular)
++        if self.conditional_mode:
++            self.dataset = ConditionalGenomicDataset(self.config)
++            self.embedding_dims = self.dataset.get_embedding_dims()
++            print(f"Using conditional genomic dataset with embeddings: {self.embedding_dims}")
++        else:
++            self.dataset = GenomicDataset(self.config)
++        
+         self.feature_dim = self.dataset.feature_dim
+         
+         # Build dataloaders using the existing build_dataloaders function
+@@ -633,7 +844,7 @@ def load_config(config_path: str) -> Config:
+     return Config(_config=config_dict)
+ 
+ 
+-def create_model(config: Config, input_dim: int):
++def create_model(config: Config, input_dim: int, embedding_dims: Optional[Dict] = None):
+     """Create model from config."""
+     model_config = config.model
+     opt_config = config.optimization
+@@ -643,6 +854,25 @@ def create_model(config: Config, input_dim: int):
+     if norm_type == "none":
+         norm_type = None
+     
++    # Set up conditional parameters
++    conditional_mode = model_config.get('conditional_mode', False)
++    conditional_kwargs = {}
++    
++    if conditional_mode and embedding_dims is not None:
++        # Add embedding parameters for conditional mode
++        conditional_kwargs.update({
++            'conditional_mode': True,
++            'n_cell_lines': embedding_dims['n_cell_lines'],
++            'n_dose_levels': embedding_dims['n_dose_levels'],
++            'n_time_points': embedding_dims['n_time_points'],
++            'cell_embedding_dim': model_config.get('cell_embedding_dim', 32),
++            'dose_embedding_dim': model_config.get('dose_embedding_dim', 32),
++            'time_embedding_dim': model_config.get('time_embedding_dim', 32),
++        })
++        print(f"Creating conditional VAE with embeddings: {embedding_dims}")
++    elif conditional_mode:
++        raise ValueError("Conditional mode enabled but no embedding dimensions provided")
++    
+     return create_vae_model(
+         input_dim=input_dim,
+         architecture=model_config['architecture'],
+@@ -657,6 +887,7 @@ def create_model(config: Config, input_dim: int):
+         T_max=model_config['T_max'],
+         eta_min=model_config['eta_min'],
+         warmup_epochs=model_config['warmup_epochs'],
++        **conditional_kwargs
+     )
+ 
+ 
+@@ -719,7 +950,7 @@ def setup_callbacks(config: Config):
+                 filename="best-epoch={epoch:02d}-val_total_loss={val/total_loss:.3f}",
+                 monitor="val/total_loss",
+                 mode="min",
+-                save_top_k=3,
++                save_top_k=1,
+                 save_last=True,
+                 auto_insert_metric_name=False,  # Prevents automatic metric insertion
+             )
+@@ -792,7 +1023,8 @@ def main():
+     
+     # Create model
+     print("Creating model...")
+-    model = create_model(config, data_module.feature_dim)
++    embedding_dims = getattr(data_module, 'embedding_dims', None)
++    model = create_model(config, data_module.feature_dim, embedding_dims)
+     print(f"Model created with {sum(p.numel() for p in model.parameters()):,} parameters")
+     
+     # Setup training components

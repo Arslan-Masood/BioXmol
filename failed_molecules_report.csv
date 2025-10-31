@@ -1,0 +1,3 @@
+idx,smiles,dataset,error_type,error_msg,success
+1669,Cc1ncc([N+](=O)[O-])n1CC(CN1CCOCC1)O[P](=O)(=O)O,cell,INVALID_SMILES,RDKit returned None,False
+3046,restricted,genomic,INVALID_SMILES,RDKit returned None,False
