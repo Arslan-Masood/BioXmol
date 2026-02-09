@@ -552,31 +552,244 @@ stages:
     deps:
     - path: downstream/DILI_Gold_best_hp_runs/best_hp_test_results
       hash: md5
-      md5: aa6781413c75610c492b5e26567ddad0.dir
-      size: 337294
+      md5: 870426d0b354e287c3c19381fc4d5637.dir
+      size: 797208
       nfiles: 450
     - path: scripts/analyze_dili_best_hp_results.py
       hash: md5
-      md5: 05314a68ad140c65fdaf4ad3de46f7f3
-      size: 10271
+      md5: 4b40fc4945c8f6ac2865c36d4a60bbb3
+      size: 12566
     outs:
     - path: 
         downstream/DILI_Gold_best_hp_runs/analysis/best_hp_results_by_model.csv
       hash: md5
-      md5: 4704fcf575fd5b334fdcbdfd91f8a80c
-      size: 2934
+      md5: daebebb311e929922ce7b7be5b850428
+      size: 8964
     - path: 
         downstream/DILI_Gold_best_hp_runs/analysis/best_hp_results_mean_across_folds.csv
       hash: md5
-      md5: afc202b26401d6d2e78f9a46703c7b8e
-      size: 20196
+      md5: 786fb2f25280d4123059f77ba17edf3c
+      size: 56516
     - path: 
         downstream/DILI_Gold_best_hp_runs/analysis/best_hp_results_std_across_folds.csv
       hash: md5
-      md5: d08426e0ad8884bb7417b286ef4d3255
-      size: 21172
+      md5: 2eb8fc907f2bebe05ae1e095a7722f0b
+      size: 57602
     - path: 
         downstream/DILI_Gold_best_hp_runs/analysis/combined_best_hp_results.csv
       hash: md5
-      md5: fcdded92186d50d4398780b7a0894f84
-      size: 153993
+      md5: 1998e3c77b3d2764eb1fc1b453055824
+      size: 314753
+  evaluate_chembl_mocop:
+    cmd: sbatch scripts/Chembl_20_FineTuning.sh 
+      /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/Chembl_20_FineTuning
+      Downstream_Chembl20.yml 
+      /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training mocop
+    deps:
+    - path: bin/train.py
+      hash: md5
+      md5: 442b714d25bc979b0a8ca1166207d3dd
+      size: 601
+    - path: configs/chembl20_mocop.yml
+      hash: md5
+      md5: a0097ff47e256a6bf38bb5cabc3000c5
+      size: 1389
+    - path: scripts/Chembl_20_FineTuning.sh
+      hash: md5
+      md5: dd8c584d77416e4341a331816fd98440
+      size: 7950
+  check_invalid_smiles_chembl20:
+    cmd: "sbatch data/check_invalid_smiles.sh data/chembl20/chembl20.csv - data/chembl20/invalid_smiles.csv
+      mocop smiles\n"
+    deps:
+    - path: check_invalid_smiles.py
+      hash: md5
+      md5: c16dc6c4d03c09c405a4c98dd49a91bd
+      size: 6427
+    - path: data/check_invalid_smiles.sh
+      hash: md5
+      md5: b09c2a3cc7d122b04222a7821c877f78
+      size: 1787
+      isexec: true
+    - path: data/chembl20/chembl20.csv
+      hash: md5
+      md5: 981d23a6c954da03fbbb9f0916540ffa
+      size: 1781980200
+    - path: mocop/featurizer/smiles_transformation.py
+      hash: md5
+      md5: 912b62f1ca3d14681cee0cc5bed0230f
+      size: 1544
+  filter_chembl20_splits:
+    cmd: "sbatch data/filter_chembl20_splits.sh data/chembl20 data/chembl20/invalid_smiles.csv
+      data/chembl20/filtered_splits mocop data/chembl20/chembl20.csv\n"
+    deps:
+    - path: data/filter_chembl20_splits.py
+      hash: md5
+      md5: 586af639fbe25b987613f51d0a2cf561
+      size: 6253
+    - path: data/filter_chembl20_splits.sh
+      hash: md5
+      md5: c4eb40632fdf860a85e9aea2ec16e237
+      size: 1374
+  process_dilirank_v2:
+    cmd: "sbatch data/process_DILIRank_v2.sh /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/DILIRank_raw.xlsx
+      /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2 pubhcem_env
+      mocop\n"
+    deps:
+    - path: 
+        /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/DILIRank_raw.xlsx
+      hash: md5
+      md5: a336e681ab162e60e139099a1c73635e
+      size: 110076
+    - path: 
+        /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/products.txt
+      hash: md5
+      md5: fb79571223e2fcad33c98519e5beeaac
+      size: 7285873
+    - path: data/DILI_v2_binarization.py
+      hash: md5
+      md5: 77aa12320961b1805f2ee0af6de56fca
+      size: 4918
+    - path: data/DILI_v2_split_temporal.py
+      hash: md5
+      md5: a15b552c8c3d06af30112bb98ce9be4b
+      size: 5714
+    - path: data/SMILES_normalization.py
+      hash: md5
+      md5: f15599457d77b37613357e4043b1ed2a
+      size: 6766
+    - path: data/process_DILIRank_v2.py
+      hash: md5
+      md5: bef153792392bdd72d5914eac4978c5a
+      size: 24818
+    - path: data/process_DILIRank_v2.sh
+      hash: md5
+      md5: 6645c774e5289ef3294b37352217d128
+      size: 13744
+  normalize_dilirank_smiles:
+    cmd: "sbatch data/normalize_smiles.sh /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/DILIrank_2.0_complete.csv
+      /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/DILIrank_2.0_normalized.csv
+      mocop\n"
+    deps:
+    - path: 
+        /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/DILIrank_2.0_complete.csv
+      hash: md5
+      md5: 35c35763c4c79f064d11d303f3961add
+      size: 257022
+    - path: data/SMILES_normalization.py
+      hash: md5
+      md5: 199927c2dc6874fe629d95c782f28213
+      size: 6666
+    - path: data/normalize_smiles.sh
+      hash: md5
+      md5: 166181a0d48fcfcd14e698bd88902a43
+      size: 1481
+  evaluate_dilirank_v2:
+    cmd: "sbatch scripts/DILIRank_v2_FineTuning.sh /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILIRank_v2_FineTuning
+      Downstream_DILIRank_v2.yml /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training
+      mocop\n"
+    deps:
+    - path: 
+        /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/DILIrank_2.0_binary_standard.csv
+      hash: md5
+      md5: 6b070aa1f98fe2e7fbac7d4cd5b43180
+      size: 185058
+    - path: 
+        /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/DILIrank_2.0_test.csv
+      hash: md5
+      md5: 48915a362a6144359987d4ead77565a5
+      size: 33552
+    - path: 
+        /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/DILIrank_2.0_train.csv
+      hash: md5
+      md5: 2cf54ff283dafcf59ad88e81c493f7fa
+      size: 151748
+    - path: bin/remap_state_dict.py
+      hash: md5
+      md5: 875d1914df37a9b9ce219e0fa2ec5b00
+      size: 1048
+    - path: bin/test.py
+      hash: md5
+      md5: bbaba4623e9a29c6e3969a102c095614
+      size: 554
+    - path: bin/train.py
+      hash: md5
+      md5: 442b714d25bc979b0a8ca1166207d3dd
+      size: 601
+    - path: configs/Downstream_DILIRank_v2.yml
+      hash: md5
+      md5: b729f39fe958a87a452b1434184b70ce
+      size: 2484
+    - path: mocop/
+      hash: md5
+      md5: 2a3148954286123152333e274b858d97.dir
+      size: 4189057
+      nfiles: 61
+    - path: scripts/DILIRank_v2_FineTuning.sh
+      hash: md5
+      md5: 877689ad13a6410835f7e065ce81000f
+      size: 6832
+  analyze_dilirank_v2_results:
+    cmd: "python scripts/analyze_dilirank_v2_results.py --results_dir /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILIRank_v2_FineTuning
+      --out_dir /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILIRank_v2_FineTuning/analysis\n"
+    deps:
+    - path: downstream/DILIRank_v2_FineTuning
+      hash: md5
+      md5: 35941eecff5c30598eed22a07df58ce6.dir
+      size: 2988653244
+      nfiles: 144
+    - path: scripts/analyze_dilirank_v2_results.py
+      hash: md5
+      md5: 03b3a57e075e677728fd0e3df9e6b9fb
+      size: 12286
+  analyze_chembl20_results:
+    cmd: "python scripts/analyze_chembl20_results.py --results_dir /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/Chembl_20_FineTuning
+      --out_dir /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/Chembl_20_FineTuning/analysis
+      --metric val/auprc_mean\n"
+    deps:
+    - path: downstream/Chembl_20_FineTuning
+      hash: md5
+      md5: aa60f7f1292bbcc23dc770050402e8ab.dir
+      size: 21627978384
+      nfiles: 591
+    - path: scripts/analyze_chembl20_results.py
+      hash: md5
+      md5: f2b643a14c53017b31c3957d83b01ffe
+      size: 11015
+  run_pyaivs_dilirank:
+    cmd: "sbatch scripts/run_pyaivs_pipeline.sh /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/DILIrank_SMILES_Labels.csv
+      /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/pyaivs pyaivs_env\n"
+    deps:
+    - path: 
+        /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/DILIrank_SMILES_Labels.csv
+      hash: md5
+      md5: 47424a9c363c0b9adbaa0f03b5133da3
+      size: 42245
+    - path: scripts/run_pyaivs_pipeline.py
+      hash: md5
+      md5: 2b4e926139ad925542afd2e7f025f040
+      size: 2418
+    - path: scripts/run_pyaivs_pipeline.sh
+      hash: md5
+      md5: dc056dcb7d84e645481a0fecd696ffd6
+      size: 1032
+  dilirank_v2_linear_probing:
+    cmd: "sbatch scripts/DILI_linear_probing_updated.sh mocop /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/features
+      /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILIRank_v2_LR_updated\n"
+    deps:
+    - path: scripts/DILI_linear_probing_updated.py
+      hash: md5
+      md5: 78130c4d0856cbbc52f708c9652dedf2
+      size: 26072
+    - path: scripts/DILI_linear_probing_updated.sh
+      hash: md5
+      md5: c605efd653c55939d92124265d84b5d6
+      size: 8194
+  process_dilirank_v2_updated:
+    cmd: "sbatch data/process_DILIRank_v2_updated.sh /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/pubchem_data/Master_DILIRank_Final_Cleaned_with_labels.csv
+      /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/features mocop\n"
+    deps:
+    - path: data/process_DILIRank_v2_updated.sh
+      hash: md5
+      md5: 67bf9659c88a59ba1854ed34963af09e
+      size: 9549
