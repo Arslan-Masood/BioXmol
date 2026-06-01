@@ -1,0 +1,2 @@
+n_pairs,pairwise_accuracy,both_correct_rate,mean_delta,median_delta,std_delta,n_positive_delta,per_drug_accuracy,per_drug_roc_auc,per_drug_pr_auc,n_train,n_test,best_penalty,best_C,best_solver,inner_cv_score,threshold,seed
+38,0.7105263157894737,0.15789473684210525,0.020934658217155608,0.02929754085781508,0.05681846008638777,27,0.5483870967741935,0.5777310924369748,0.5906914292683259,831,62,l2,0.001,lbfgs,0.6718909166391976,0.4832090491848771,0

@@ -3,7 +3,7 @@
 #SBATCH --mem=120G
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
-#SBATCH --partition=gpu-v100-32g,gpu-v100-16g,gpu-h200-18g-ia
+#SBATCH --partition=gpu-v100-32g,gpu-v100-16g,gpu-h200-18g-ia,gpu-h100-80g,gpu-a100-80g
 #SBATCH --array=0-2
 #SBATCH --output=/scratch/work/masooda1/Multi_Modal_Contrastive/script_outputs/Contrastive_training/Vanilla_Clip_without_VAE_%a.out
 

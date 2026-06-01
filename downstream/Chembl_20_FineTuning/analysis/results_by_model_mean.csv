@@ -1,0 +1,6 @@
+model_type,val_auprc_mean
+Soft_Clip_with_Frozen_Teacher,0.5820719003677368
+Soft_Clip_with_Teacher,0.5852598110834758
+Soft_Clip_with_Teacher_with_centering,0.5832145909468333
+Vanilla_Clip_with_VAE,0.5917730163782835
+Vanilla_Clip_without_VAE,0.5926093254238367

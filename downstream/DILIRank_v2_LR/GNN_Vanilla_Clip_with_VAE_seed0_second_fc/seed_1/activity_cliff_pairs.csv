@@ -1,0 +1,14 @@
+safe_drug,toxic_drug,p_safe,p_toxic,delta,pairwise_correct,safe_correct,toxic_correct,both_correct,safe_label,toxic_label,safe_pred,toxic_pred
+Enzalutamide,Nilutamide,0.8347325370917305,0.7102584208117924,-0.1244741162799381,False,False,True,False,0.0,1.0,1,1
+Rifamycin sodium,Rifampin,0.41634856147062527,0.4210671282784831,0.004718566807857816,True,True,False,False,0.0,1.0,0,0
+Sarecycline hydrochloride,Tigecycline,0.7004936462533777,0.5466834002156497,-0.15381024603772808,False,False,True,False,0.0,1.0,1,1
+Sarecycline hydrochloride,Minocycline hydrochloride,0.7004936462533777,0.7374184513846871,0.03692480513130936,True,False,True,False,0.0,1.0,1,1
+Voclosporin,Cyclosporine,0.4921299461220784,0.49212994510324115,-1.018837236799186e-09,False,True,False,False,0.0,1.0,0,0
+Minocycline hydrochloride,Doxycycline,0.7374184513846871,0.5605148606672506,-0.17690359071743644,False,True,True,True,1.0,1.0,1,1
+Trovafloxacin mesylate,Moxifloxacin hydrochloride,0.5483628025868191,0.5256704097011891,-0.022692392885630075,False,True,True,True,1.0,1.0,1,1
+Benzbromarone,Amiodarone hydrochloride,0.8189515199031471,0.5436227266841192,-0.2753287932190279,False,True,True,True,1.0,1.0,1,1
+Ticlopidine hydrochloride,Clopidogrel bisulfate,0.38079986950733336,0.5562738226141947,0.1754739531068613,True,False,True,False,1.0,1.0,0,1
+Ibufenac,Ibuprofen,0.5737301247422378,0.6599412911197754,0.08621116637753756,True,True,True,True,1.0,1.0,1,1
+Tolcapone,Entacapone,0.6455870445716809,0.6315246224403983,-0.014062422131282615,False,True,True,True,1.0,1.0,1,1
+Cyclofenil,Clomiphene citrate,0.5711049628059703,0.512742702977097,-0.05836225982887333,False,True,True,True,1.0,1.0,1,1
+Troglitazone,Pioglitazone hydrochloride,0.7833874011310404,0.6990334235701672,-0.08435397756087326,False,True,True,True,1.0,1.0,1,1

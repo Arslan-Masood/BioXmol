@@ -1,317 +1,188 @@
 #!/usr/bin/env python3
 """
-Plot PCA of activity cliff molecules
-====================================
-
-This script:
-  - Loads a DILI feature CSV (same format used in `DILI_linear_probing_updated.py`)
-  - Selects only activity cliff compounds
-  - Projects their features into 2D using PCA
-  - Colors points by label (safe vs toxic)
-  - Connects each activity cliff pair with a dotted line
-  - Annotates each line with Tanimoto similarity based on MACCS fingerprints
-
-Example:
---------
-python plot_activity_cliff_pca.py \\
-    --features_file /path/to/DILIrank_2.0_normalized_ECFP_1024_2.csv \\
-    --output_path /path/to/output/activity_cliff_pca_ECFP.png \\
-    --label_col binary_label \\
-    --smiles_col SMILES_Normalized \\
-    --compound_name_col Name
+Publication-Ready PCA Activity Cliff Plot (Geometric Shapes & External Legend)
 """
 
 import argparse
-import os
-from pathlib import Path
-from typing import List, Tuple, Dict
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 from sklearn.decomposition import PCA
 from rdkit import Chem, DataStructs
 from rdkit.Chem import MACCSkeys
 
-
 # =============================================================================
-# ACTIVITY CLIFF DEFINITIONS (copied from DILI_linear_probing_updated.py)
+# CONFIGURATION
 # =============================================================================
+plt.rcParams.update({
+    'font.family': 'sans-serif',
+    'font.sans-serif': ['Arial', 'Helvetica', 'DejaVu Sans'],
+    'font.size': 10,
+    'axes.labelsize': 12,
+    'axes.titlesize': 13,
+    'xtick.labelsize': 10,
+    'ytick.labelsize': 10,
+    'legend.fontsize': 10,
+    'figure.titlesize': 14,
+    'mathtext.fontset': 'custom',
+    'mathtext.rm': 'Arial',
+})
 
-# Activity cliff pairs: (safe_drug, toxic_drug) with high structural similarity
-# but divergent DILI outcomes. Sources: DILIrank 2.0 (Table 2), Chen et al. 2016 (Table 3)
-ACTIVITY_CLIFF_PAIRS: List[Tuple[str, str]] = [
-    # DILIrank 2.0 - NEW pairs
+# --- PAIR DEFINITIONS ---
+PAIRS_D2 = [
     ("Enzalutamide", "Nilutamide"),
-    ("Rifamycin sodium", "Rifampin"),
-    ("Sarecycline hydrochloride", "Tigecycline"),
     ("Sarecycline hydrochloride", "Minocycline hydrochloride"),
+    ("Sarecycline hydrochloride", "Tigecycline"),
     ("Voclosporin", "Cyclosporine"),
-    # Chen et al. 2016 - ORIGINAL pairs
-    ("Minocycline hydrochloride", "Doxycycline"),
-    ("Trovafloxacin mesylate", "Moxifloxacin hydrochloride"),
-    ("Benzbromarone", "Amiodarone hydrochloride"),
-    ("Ticlopidine hydrochloride", "Clopidogrel bisulfate"),
-    ("Ibufenac", "Ibuprofen"),
-    ("Alpidem", "Zolpidem tartrate"),
-    ("Ticrynafen", "Ethacrynic acid"),
-    ("Tolcapone", "Entacapone"),
-    ("Cyclofenil", "Clomiphene citrate"),
-    ("Troglitazone", "Pioglitazone hydrochloride"),
+    ("Rifamycin sodium", "Rifampin"),
 ]
 
-ACTIVITY_CLIFF_COMPOUNDS = list(
-    set(drug for pair in ACTIVITY_CLIFF_PAIRS for drug in pair)
-)
+PAIRS_D1 = [
+    ("Ibuprofen", "Ibufenac"),
+    ("Pioglitazone hydrochloride", "Troglitazone"),
+    ("Entacapone", "Tolcapone"),
+    ("Clopidogrel bisulfate", "Ticlopidine hydrochloride"),
+    ("Moxifloxacin hydrochloride", "Trovafloxacin mesylate"),
+    ("Clomiphene citrate", "Cyclofenil"),
+    ("Doxycycline", "Minocycline hydrochloride"),
+]
 
+ALL_PAIRS = PAIRS_D2 + PAIRS_D1
+ALL_COMPOUNDS = list(set(d for p in ALL_PAIRS for d in p))
+
+# Distinct markers to assign to pairs
+MARKERS = ['o', 's', '^', 'D', 'v', 'P', 'X', '*', 'h', 'p']
 
 # =============================================================================
-# HELPER FUNCTIONS
+# HELPERS
 # =============================================================================
+def maccs_tanimoto(smiles_a, smiles_b):
+    mol_a = Chem.MolFromSmiles(str(smiles_a))
+    mol_b = Chem.MolFromSmiles(str(smiles_b))
+    if mol_a is None or mol_b is None: return float("nan")
+    return DataStructs.TanimotoSimilarity(MACCSkeys.GenMACCSKeys(mol_a), MACCSkeys.GenMACCSKeys(mol_b))
 
-def get_feature_columns(df: pd.DataFrame) -> List[str]:
-    """Extract feature column names (columns starting with 'feature_')."""
-    cols = [c for c in df.columns if c.startswith("feature_")]
-    if not cols:
-        raise ValueError(
-            "No feature columns found. Expected columns starting with 'feature_'."
-        )
-    return cols
-
-
-def compute_maccs_tanimoto(smiles1: str, smiles2: str) -> float:
-    """Compute Tanimoto similarity between two SMILES using MACCS fingerprints."""
-    mol1 = Chem.MolFromSmiles(smiles1)
-    mol2 = Chem.MolFromSmiles(smiles2)
-    if mol1 is None or mol2 is None:
-        return float("nan")
-    fp1 = MACCSkeys.GenMACCSKeys(mol1)
-    fp2 = MACCSkeys.GenMACCSKeys(mol2)
-    return float(DataStructs.TanimotoSimilarity(fp1, fp2))
-
-
-def load_activity_cliff_data(
-    features_file: str,
-    smiles_col: str,
-    label_col: str,
-    compound_name_col: str,
-) -> pd.DataFrame:
-    """
-    Load features and filter to activity cliff compounds present in the dataset.
-    """
-    df = pd.read_csv(features_file)
-
-    # Basic validation
-    for col in [smiles_col, label_col, compound_name_col]:
-        if col not in df.columns:
-            raise ValueError(f"Column '{col}' not found in {features_file}.")
-
-    # Keep unique molecules by SMILES (consistent with other scripts)
-    df = df.drop_duplicates(subset=[smiles_col])
-
-    dataset_compounds = set(df[compound_name_col].unique())
-    found = dataset_compounds & set(ACTIVITY_CLIFF_COMPOUNDS)
-    missing = set(ACTIVITY_CLIFF_COMPOUNDS) - dataset_compounds
-
-    print(f"Found {len(found)}/{len(ACTIVITY_CLIFF_COMPOUNDS)} activity cliff compounds.")
-    if missing:
-        print("Missing compounds (not present in this features file):")
-        print(sorted(missing))
-
-    cliff_mask = df[compound_name_col].isin(found)
-    df_cliff = df[cliff_mask].copy()
-
-    print(f"Number of activity cliff molecules in this file: {len(df_cliff)}")
-    return df_cliff
-
-
-def plot_activity_cliff_pca(
-    df_cliff: pd.DataFrame,
-    smiles_col: str,
-    label_col: str,
-    compound_name_col: str,
-    output_path: str,
-    title: str = None,
-) -> None:
-    """Perform PCA and generate the activity cliff plot."""
-    if df_cliff.empty:
-        raise ValueError("No activity cliff molecules found to plot.")
-
-    feature_cols = get_feature_columns(df_cliff)
-    X = df_cliff[feature_cols].values.astype(np.float32)
-    labels = df_cliff[label_col].values
-    names = df_cliff[compound_name_col].astype(str).values
-    smiles = df_cliff[smiles_col].astype(str).values
-
-    # PCA to 2D
-    pca = PCA(n_components=2, random_state=0)
-    coords = pca.fit_transform(X)
-
-    df_plot = pd.DataFrame(
-        {
-            "x": coords[:, 0],
-            "y": coords[:, 1],
-            "label": labels,
-            "name": names,
-            "smiles": smiles,
-        }
-    )
-
-    fig, ax = plt.subplots(figsize=(8, 6))
-
-    # Label mapping (assumes 0 = safe, 1 = toxic; falls back to numeric otherwise)
-    unique_labels = sorted(pd.unique(df_plot["label"]))
-    for lab in unique_labels:
-        sub = df_plot[df_plot["label"] == lab]
-        if lab == 0:
-            color, marker, lab_name = "tab:blue", "o", "Safe (0)"
-        elif lab == 1:
-            color, marker, lab_name = "tab:red", "^", "Toxic (1)"
-        else:
-            color, marker, lab_name = "tab:gray", "s", f"Label {lab}"
-
-        ax.scatter(
-            sub["x"],
-            sub["y"],
-            c=color,
-            marker=marker,
-            label=lab_name,
-            alpha=0.8,
-            edgecolors="k",
-            linewidths=0.5,
-        )
-
-    # Index lookup by compound name
-    name_to_idx: Dict[str, int] = {
-        n: i for i, n in enumerate(df_plot["name"].values)
+def clean_name(name):
+    replacements = {
+        " hydrochloride": " HCl", " mesylate": " mes.", " bisulfate": " bis.",
+        " tartrate": " tart.", " sodium": " Na", " citrate": " cit."
     }
+    for old, new in replacements.items():
+        name = name.replace(old, new)
+    return name
 
-    # Connect each valid pair with a dotted line and annotate Tanimoto similarity
-    for safe_drug, toxic_drug in ACTIVITY_CLIFF_PAIRS:
-        if safe_drug not in name_to_idx or toxic_drug not in name_to_idx:
-            continue
-
-        i_safe = name_to_idx[safe_drug]
-        i_toxic = name_to_idx[toxic_drug]
-
-        x1, y1 = df_plot.loc[i_safe, ["x", "y"]]
-        x2, y2 = df_plot.loc[i_toxic, ["x", "y"]]
-
-        # Draw dotted line
-        ax.plot(
-            [x1, x2],
-            [y1, y2],
-            linestyle="--",
-            color="gray",
-            linewidth=1.0,
-            alpha=0.8,
-        )
-
-        # Compute MACCS Tanimoto similarity
-        s1 = df_plot.loc[i_safe, "smiles"]
-        s2 = df_plot.loc[i_toxic, "smiles"]
-        tanimoto = compute_maccs_tanimoto(s1, s2)
-
-        if np.isfinite(tanimoto):
-            xm, ym = (x1 + x2) / 2.0, (y1 + y2) / 2.0
-            ax.text(
-                xm,
-                ym,
-                f"{tanimoto:.2f}",
-                fontsize=8,
-                ha="center",
-                va="bottom",
-                color="black",
-                bbox=dict(
-                    boxstyle="round,pad=0.2",
-                    fc="white",
-                    ec="none",
-                    alpha=0.8,
-                ),
-            )
-
-    ax.set_xlabel("PC1")
-    ax.set_ylabel("PC2")
-    if title is None:
-        title = "PCA of Activity Cliff Molecules"
-    ax.set_title(title)
-    ax.legend(frameon=True)
-    fig.tight_layout()
-
-    out_path = Path(output_path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=300)
-    plt.close(fig)
-    print(f"Saved PCA plot to: {out_path}")
-
+def get_euclidean_distance(pos_a, pos_b):
+    return np.linalg.norm(np.array(pos_a) - np.array(pos_b))
 
 # =============================================================================
 # MAIN
 # =============================================================================
-
 def main():
-    parser = argparse.ArgumentParser(
-        description="PCA plot of activity cliff molecules with MACCS Tanimoto annotations",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-
-    parser.add_argument(
-        "--features_file",
-        type=str,
-        required=True,
-        help="Path to features CSV (same format as used in DILI linear probing).",
-    )
-    parser.add_argument(
-        "--output_path",
-        type=str,
-        required=True,
-        help="Path to save the PCA plot (e.g., /path/to/plot.png).",
-    )
-    parser.add_argument(
-        "--label_col",
-        type=str,
-        default="binary_label",
-        help="Name of binary label column (default: binary_label).",
-    )
-    parser.add_argument(
-        "--smiles_col",
-        type=str,
-        default="SMILES_Normalized",
-        help="Name of SMILES column (default: SMILES_Normalized).",
-    )
-    parser.add_argument(
-        "--compound_name_col",
-        type=str,
-        default="Name",
-        help="Compound name column (default: Name).",
-    )
-    parser.add_argument(
-        "--title",
-        type=str,
-        default=None,
-        help="Optional custom title for the plot.",
-    )
-
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--features_file", type=str, required=True)
+    parser.add_argument("--output_file", type=str, default="activity_cliff_geometric.pdf")
     args = parser.parse_args()
 
-    df_cliff = load_activity_cliff_data(
-        features_file=args.features_file,
-        smiles_col=args.smiles_col,
-        label_col=args.label_col,
-        compound_name_col=args.compound_name_col,
-    )
+    # 1. LOAD & PREP
+    df = pd.read_csv(args.features_file).drop_duplicates(subset=["SMILES_Normalized"])
+    dataset_compounds = set(df["Name"].unique())
+    found = dataset_compounds & set(ALL_COMPOUNDS)
+    df_cliff = df[df["Name"].isin(found)].copy().reset_index(drop=True)
+    
+    # 2. PCA
+    feature_cols = [c for c in df_cliff.columns if c.startswith("feature_")]
+    X = df_cliff[feature_cols].values.astype(np.float32)
+    pca = PCA(n_components=2, random_state=42)
+    X_2d = pca.fit_transform(X)
+    var_exp = pca.explained_variance_ratio_ * 100
 
-    plot_activity_cliff_pca(
-        df_cliff=df_cliff,
-        smiles_col=args.smiles_col,
-        label_col=args.label_col,
-        compound_name_col=args.compound_name_col,
-        output_path=args.output_path,
-        title=args.title,
-    )
+    name_to_info = {}
+    for i, row in df_cliff.iterrows():
+        name_to_info[row["Name"]] = {
+            "x": X_2d[i, 0], "y": X_2d[i, 1],
+            "smiles": row["SMILES_Normalized"], "label": row["vDILI-Concern_standardized"]
+        }
 
+    # 3. PLOT SETUP
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7), sharey=True, sharex=True)
+
+    colors = {
+        "vno-dili-concern": "#2ecc71",     # Green
+        "vless-dili-concern": "#f39c12",   # Orange
+        "vmost-dili-concern": "#e74c3c"    # Red
+    }
+    
+    panels = [
+        {"ax": axes[0], "title_base": "A. No-DILI vs. Most-DILI", "pair_list": PAIRS_D2},
+        {"ax": axes[1], "title_base": "B. Less-DILI vs. Most-DILI", "pair_list": PAIRS_D1}
+    ]
+
+    for panel in panels:
+        ax = panel["ax"]
+        pair_list = panel["pair_list"]
+        
+        distances = []
+        legend_elements = []
+        
+        # --- ITERATE PAIRS IN THIS PANEL ---
+        for i, (drug_a, drug_b) in enumerate(pair_list):
+            if drug_a not in name_to_info or drug_b not in name_to_info: continue
+            
+            info_a, info_b = name_to_info[drug_a], name_to_info[drug_b]
+            marker = MARKERS[i % len(MARKERS)] # Assign unique shape
+            
+            # 1. Calculate Distance & Similarity
+            dist = get_euclidean_distance((info_a["x"], info_a["y"]), (info_b["x"], info_b["y"]))
+            distances.append(dist)
+            ts = maccs_tanimoto(info_a["smiles"], info_b["smiles"])
+            
+            # 2. Draw Connection Line
+            ax.plot([info_a["x"], info_b["x"]], [info_a["y"], info_b["y"]],
+                    linestyle="--", color="#999999", linewidth=1.0, alpha=0.5, zorder=1)
+            
+            # 3. Draw Points (Drug A)
+            ax.scatter(info_a["x"], info_a["y"], 
+                       c=colors[info_a["label"]], marker=marker,
+                       s=180, edgecolors="black", linewidth=0.8, zorder=3)
+            
+            # 4. Draw Points (Drug B)
+            ax.scatter(info_b["x"], info_b["y"], 
+                       c=colors[info_b["label"]], marker=marker,
+                       s=180, edgecolors="black", linewidth=0.8, zorder=3)
+            
+            # 5. Add to Legend
+            # We create a black marker for the legend to represent the pair shape
+            label_text = f"{clean_name(drug_a)} / {clean_name(drug_b)} (TS={ts:.2f})"
+            legend_elements.append(Line2D([0], [0], marker=marker, color='w', label=label_text,
+                                          markerfacecolor='gray', markersize=10, markeredgecolor='black'))
+
+        # --- PANEL METRICS ---
+        mean_dist = np.mean(distances) if distances else 0.0
+        ax.set_title(f"{panel['title_base']}\n(Mean Euclidean Dist: {mean_dist:.2f})", 
+                     fontsize=12, fontweight="bold", pad=15)
+
+        # --- FORMATTING ---
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.grid(True, linestyle='-', alpha=0.1, color='black')
+        ax.set_xlabel(f"PC1 ({var_exp[0]:.1f}%)", fontweight='bold')
+        
+        # --- LEGEND OUTSIDE ---
+        # Place legend to the right of the subplot
+        # bbox_to_anchor=(x, y) coordinates are in axes fraction
+        ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(0.0, -0.15),
+                  ncol=1, frameon=False, fontsize=9, title="Activity Cliff Pairs (Shape ID)")
+
+    axes[0].set_ylabel(f"PC2 ({var_exp[1]:.1f}%)", fontweight='bold')
+    
+    # Adjust layout to make room for the bottom legends
+    plt.tight_layout()
+    # Extra adjustment to ensure bottom legends aren't cut off
+    plt.subplots_adjust(bottom=0.35) 
+    
+    plt.savefig(args.output_file, dpi=600, bbox_inches="tight")
+    print(f"Saved geometric figure with external legend: {args.output_file}")
 
 if __name__ == "__main__":
     main()
-
-

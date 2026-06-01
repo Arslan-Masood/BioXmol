@@ -1,0 +1,39 @@
+safe_drug,toxic_drug,p_safe,p_toxic,delta,pairwise_correct,safe_correct,toxic_correct,both_correct,safe_label,toxic_label,safe_pred,toxic_pred
+Nystatin,Amphotericin B,0.3159583160571707,0.34785237894404225,0.03189406288687158,True,True,False,False,0.0,1.0,0,0
+Temsirolimus,Everolimus,0.830457373959619,0.725377148451259,-0.10508022550836005,False,False,True,False,0.0,1.0,1,1
+Protriptyline hydrochloride,Nortriptyline hydrochloride,0.5124753106970243,0.5434113117308637,0.03093600103383931,True,False,True,False,0.0,1.0,1,1
+Daunorubicin hydrochloride,Doxorubicin hydrochloride,0.7538506921664746,0.6829392394635887,-0.0709114527028859,False,False,True,False,0.0,1.0,1,1
+Exenatide synthetic,Liraglutide,0.27255433138573515,0.3561283613853732,0.08357402999963803,True,True,False,False,0.0,1.0,0,0
+Terazosin hydrochloride,Alfuzosin hydrochloride,0.6428196930560462,0.5496774255040539,-0.0931422675519924,False,False,True,False,0.0,1.0,1,1
+Lurasidone hydrochloride,Ziprasidone hydrochloride,0.3832127617382402,0.518297631624251,0.13508486988601082,True,True,True,True,0.0,1.0,0,1
+Budesonide,Prednisone,0.5363487113566592,0.6441500813890727,0.10780137003241352,True,False,True,False,0.0,1.0,1,1
+Budesonide,Prednisolone,0.5363487113566592,0.475390794847126,-0.060957916509533194,False,False,False,False,0.0,1.0,1,0
+Pramlintide acetate,Liraglutide,0.1790637403778605,0.3561283613853732,0.1770646210075127,True,True,False,False,0.0,1.0,0,0
+Dutasteride,Finasteride,0.4936019372953199,0.3976998748958296,-0.09590206239949034,False,False,False,False,0.0,1.0,1,0
+Fesoterodine fumarate,Tolterodine tartrate,0.5419165081932614,0.5608254462892004,0.018908938095938965,True,False,True,False,0.0,1.0,1,1
+Topotecan hydrochloride,Irinotecan hydrochloride,0.4968732748187995,0.35691390372532605,-0.13995937109347345,False,False,False,False,0.0,1.0,1,0
+Ibutilide fumarate,Dofetilide,0.551582875437853,0.7183940495176102,0.1668111740797572,True,False,True,False,0.0,1.0,1,1
+Bacitracin,Daptomycin,0.26763210579647473,0.19146102004020582,-0.07617108575626891,False,True,False,False,0.0,1.0,0,0
+Esmolol hydrochloride,Acebutolol hydrochloride,0.46316743596422205,0.5553669490706115,0.09219951310638941,True,True,True,True,0.0,1.0,0,1
+Meclizine hydrochloride,Cetirizine hydrochloride,0.6569045901579712,0.5632186454982671,-0.09368594465970415,False,False,True,False,0.0,1.0,1,1
+Ibutilide fumarate,Dronedarone hydrochloride,0.551582875437853,0.7702197251982136,0.21863684976036057,True,False,True,False,0.0,1.0,1,1
+Levonorgestrel,Progesterone,0.5213893239870198,0.6366920530603792,0.11530272907335948,True,False,True,False,0.0,1.0,1,1
+Esmolol hydrochloride,Atenolol,0.46316743596422205,0.4239721652765858,-0.03919527068763623,False,True,False,False,0.0,1.0,0,0
+Morphine sulfate,Bromocriptine mesylate,0.2911044780697006,0.5745340642312058,0.2834295861615052,True,True,True,True,0.0,1.0,0,1
+Alfentanil hydrochloride,Remifentanil hydrochloride,0.4540795807045096,0.4756156228794679,0.021536042174958303,True,True,False,False,0.0,1.0,0,0
+Primaquine phosphate,Chloroquine phosphate,0.5762018917974571,0.48031644566896126,-0.09588544612849581,False,False,False,False,0.0,1.0,1,0
+Triprolidine hydrochloride,Cyproheptadine hydrochloride,0.49805099612256465,0.3452092381959631,-0.15284175792660154,False,False,False,False,0.0,1.0,1,0
+Protriptyline hydrochloride,Amitriptyline hydrochloride,0.5124753106970243,0.4553384570082049,-0.05713685368881943,False,False,False,False,0.0,1.0,1,0
+Primidone,Phenobarbital sodium,0.6159858339535048,0.6294397051000594,0.013453871146554608,True,False,True,False,0.0,1.0,1,1
+Tapentadol hydrochloride,Tramadol hydrochloride,0.39557427444000465,0.4024455783236319,0.006871303883627278,True,True,False,False,0.0,1.0,0,0
+Conivaptan hydrochloride,Tolvaptan,0.6215374601968666,0.6080511625893353,-0.013486297607531283,False,False,True,False,0.0,1.0,1,1
+Pramlintide acetate,Repaglinide,0.1790637403778605,0.5466253128667729,0.36756157248891236,True,True,True,True,0.0,1.0,0,1
+Temsirolimus,Sunitinib malate,0.830457373959619,0.5812029605179944,-0.2492544134416247,False,False,True,False,0.0,1.0,1,1
+Codeine sulfate,Oxycodone hydrochloride,0.4082451116527128,0.48999634987580915,0.08175123822309632,True,True,False,False,0.0,1.0,0,0
+Bivalirudin,Ximelagatran,0.1530978607675904,0.4599616923739733,0.30686383160638286,True,True,False,False,0.0,1.0,0,0
+Kanamycin,Amphotericin B,0.055533700737208584,0.34785237894404225,0.29231867820683366,True,True,False,False,0.0,1.0,0,0
+Vilazodone hydrochloride,Trazodone hydrochloride,0.47780078254174185,0.5967353368876755,0.1189345543459337,True,True,True,True,0.0,1.0,0,1
+Morphine sulfate,Oxycodone hydrochloride,0.2911044780697006,0.48999634987580915,0.19889187180610857,True,True,False,False,0.0,1.0,0,0
+Exenatide synthetic,Repaglinide,0.27255433138573515,0.5466253128667729,0.2740709814810377,True,True,True,True,0.0,1.0,0,1
+Morphine sulfate,Sildenafil citrate,0.2911044780697006,0.6271925667670429,0.33608808869734236,True,True,True,True,0.0,1.0,0,1
+Kanamycin,Azithromycin,0.055533700737208584,0.2961535085071117,0.2406198077699031,True,True,False,False,0.0,1.0,0,0

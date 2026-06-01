@@ -1,0 +1,82 @@
+seed: 0
+dataloaders:
+  _target_: training.build_dataloaders
+  dataset:
+    _target_: dataset.SupervisedGraphDataset
+    data_path: data/chembl20/chembl20.csv
+    invalid_smiles_report: data/chembl20/invalid_smiles.csv
+    cmpd_col: smiles
+    cmpd_col_is_inchikey: false
+    pad_length: 500
+  splits:
+    train: 
+    val: 
+    test: 
+  batch_size:
+  num_workers:
+  pin_memory: true
+model:
+  _target_: model.LightningGGNN.load_from_checkpoint
+  _args_:
+  - 
+  strict: false
+  n_edge: 1
+  in_dim: 75
+  n_conv: 6
+  fc_dims:
+  - 1024
+  - 1310
+  p_dropout: 0.1
+  freeze: false
+  loss_type: BCE #focal or BCE
+  focal_gamma: 1.0
+optimizer:
+  _target_: torch.optim.Adam
+  lr: 5.0e-05
+trainer:
+  _target_: pytorch_lightning.Trainer
+  devices: 1
+  accelerator: gpu
+  num_nodes: 1
+  precision: 32
+  max_epochs: 1000
+  min_epochs: 50
+  fast_dev_run: false
+  check_val_every_n_epoch: 1
+  enable_model_summary: true
+  callbacks:
+  - _target_: pytorch_lightning.callbacks.early_stopping.EarlyStopping
+    monitor: val/auprc_mean
+    mode: max
+    patience: 20
+  - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+    monitor: val/auprc_mean
+    mode: max
+    save_top_k: 1
+    dirpath: # Will be set via command line
+    filename: "best-epoch-{epoch}-val_auprc-{val/auprc_mean:.3f}"
+    save_last: true
+    auto_insert_metric_name: false
+    verbose: false
+  logger:
+    _target_: pytorch_lightning.loggers.NeptuneLogger
+    project: # Will be set via command line
+    name: # Will be set via command line
+    api_key: # Will be set via command line
+    log_model_checkpoints: false
+test_model:
+  _target_: model.LightningGGNN.load_from_checkpoint
+  checkpoint_path: # Will be set via command line
+  n_edge: ${model.n_edge}
+  in_dim: ${model.in_dim}
+  n_conv: ${model.n_conv}
+  fc_dims: ${model.fc_dims}
+  p_dropout: ${model.p_dropout}
+
+test_results_dir: # This will be overridden by the command line argument
+test_results_filename: # This will be overridden by the command line argument
+test_model_ckpt: # This can be overridden by the command line (manual checkpoint load)
+# NOTE:
+# - Keep your existing `model:` section from Downstream_DILIGold.yml.
+#   If you prefer, copy it here verbatim, or use this file as a base that the
+#   array script copies and modifies per run.

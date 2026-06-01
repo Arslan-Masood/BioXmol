@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 from typing import List, Tuple, Dict
 import traceback
+from tqdm import tqdm
 
 # Add mocop to path
 sys.path.insert(0, str(Path(__file__).parent / "mocop"))
@@ -69,8 +70,8 @@ def process_dataset(df: pd.DataFrame, dataset_name: str, smiles_col: str = "Meta
     
     unique_smiles = df[smiles_col].dropna().unique()
     print(f"Checking {len(unique_smiles)} unique SMILES in {dataset_name} dataset...")
-    
-    for idx, smiles in enumerate(unique_smiles):
+
+    for idx, smiles in enumerate(tqdm(unique_smiles, desc=f"Validating {dataset_name}", unit="smile")):
         is_valid, error_type, error_msg = check_smiles_validity(smiles)
         
         if not is_valid:
@@ -83,9 +84,6 @@ def process_dataset(df: pd.DataFrame, dataset_name: str, smiles_col: str = "Meta
                 "success": False
             }
             failures.append(failure_info)
-            
-            if len(failures) % 10 == 0:
-                print(f"  Found {len(failures)} invalid SMILES so far...")
     
     print(f"Found {len(failures)} invalid SMILES in {dataset_name} dataset")
     return failures
@@ -94,7 +92,7 @@ def process_dataset(df: pd.DataFrame, dataset_name: str, smiles_col: str = "Meta
 def main():
     parser = argparse.ArgumentParser(description="Check for invalid SMILES in datasets")
     parser.add_argument("--cell_data", required=True, help="Path to cell/morphological data file (CSV/Parquet)")
-    parser.add_argument("--genomic_data", required=True, help="Path to genomic data file (Parquet)")
+    parser.add_argument("--genomic_data", required=False, default=None, help="Path to genomic data file (CSV/Parquet). Optional")
     parser.add_argument("--output", required=True, help="Output CSV file path for failed molecules report")
     parser.add_argument("--smiles_col", default="Metadata_SMILES", help="Name of SMILES column (default: Metadata_SMILES)")
     
@@ -111,13 +109,20 @@ def main():
         cell_df = pd.read_csv(cell_path)
     print(f"Loaded cell data: {len(cell_df)} rows")
     
-    # Load genomic data
-    genomic_path = Path(args.genomic_data)
-    genomic_df = pd.read_parquet(genomic_path)
-    print(f"Loaded genomic data: {len(genomic_df)} rows")
+    # Optionally load genomic data (supports parquet or csv)
+    genomic_df = None
+    if args.genomic_data and str(args.genomic_data).strip() != "-":
+        genomic_path = Path(args.genomic_data)
+        if genomic_path.suffix == ".parquet":
+            genomic_df = pd.read_parquet(genomic_path)
+        else:
+            genomic_df = pd.read_csv(genomic_path)
+        print(f"Loaded genomic data: {len(genomic_df)} rows")
     
     # Check if SMILES column exists
     for df, name in [(cell_df, "cell"), (genomic_df, "genomic")]:
+        if df is None:
+            continue
         if args.smiles_col not in df.columns:
             print(f"Error: {args.smiles_col} column not found in {name} dataset")
             print(f"Available columns: {list(df.columns)}")
@@ -130,9 +135,11 @@ def main():
     cell_failures = process_dataset(cell_df, "cell", args.smiles_col)
     all_failures.extend(cell_failures)
     
-    # Check genomic data
-    genomic_failures = process_dataset(genomic_df, "genomic", args.smiles_col)
-    all_failures.extend(genomic_failures)
+    # Check genomic data if provided
+    genomic_failures = []
+    if genomic_df is not None:
+        genomic_failures = process_dataset(genomic_df, "genomic", args.smiles_col)
+        all_failures.extend(genomic_failures)
     
     # Create summary
     if all_failures:
@@ -147,7 +154,8 @@ def main():
         print("\nFailure Summary:")
         print(f"Total invalid SMILES: {len(all_failures)}")
         print(f"Cell dataset failures: {len(cell_failures)}")
-        print(f"Genomic dataset failures: {len(genomic_failures)}")
+        if genomic_df is not None:
+            print(f"Genomic dataset failures: {len(genomic_failures)}")
         
         print("\nError types:")
         error_counts = failures_df["error_type"].value_counts()

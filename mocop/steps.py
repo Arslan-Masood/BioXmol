@@ -118,7 +118,7 @@ def _validation_epoch_end_all_cell_lines(self, validation_step_outputs, is_regre
         if not self.trainer.sanity_checking:
             self.log_dict(filtered_logs, on_step=False, on_epoch=True, sync_dist=True)
     
-def _supervised_metric(supervised_labels, supervised_outputs):
+def _supervised_metric(supervised_labels, supervised_outputs, compute_ranking_metrics=False):
     metric = defaultdict(list)
     for labels, logits in zip(supervised_labels.T, supervised_outputs.T):
         mask = labels != -1
@@ -210,135 +210,136 @@ def _supervised_metric(supervised_labels, supervised_outputs):
         metric["enrichment_factor"].append(enrichment_factor)
         
         # Ranking metrics for drug discovery prioritization
-        # Spearman's ρ (rho) - rank correlation
-        try:
-            spearman_rho, _ = spearmanr(masked_labels, masked_logits)
-            if np.isnan(spearman_rho):
+        if compute_ranking_metrics:
+            # Spearman's ρ (rho) - rank correlation
+            try:
+                spearman_rho, _ = spearmanr(masked_labels, masked_logits)
+                if np.isnan(spearman_rho):
+                    spearman_rho = 0.0
+            except:
                 spearman_rho = 0.0
-        except:
-            spearman_rho = 0.0
-        metric["spearman_rho"].append(spearman_rho)
-        
-        # Kendall's τ (tau) - rank correlation
-        try:
-            kendall_tau, _ = kendalltau(masked_labels, masked_logits)
-            if np.isnan(kendall_tau):
+            metric["spearman_rho"].append(spearman_rho)
+            
+            # Kendall's τ (tau) - rank correlation
+            try:
+                kendall_tau, _ = kendalltau(masked_labels, masked_logits)
+                if np.isnan(kendall_tau):
+                    kendall_tau = 0.0
+            except:
                 kendall_tau = 0.0
-        except:
-            kendall_tau = 0.0
-        metric["kendall_tau"].append(kendall_tau)
-        
-        # Top-k ranking metrics (most relevant for drug discovery)
-        # Spearman's ρ and Kendall's τ on top-k fractions
-        
-        # Top 10% ranking correlation
-        n_top_10 = max(1, int(len(masked_labels) * 0.1))  # Top 10%
-        top_10_indices = np.argsort(masked_logits)[-n_top_10:]  # Highest scores
-        if len(top_10_indices) > 1:  # Need at least 2 points for correlation
-            top_10_labels = masked_labels[top_10_indices]
-            top_10_scores = masked_logits[top_10_indices]
-            try:
-                spearman_rho_top10, _ = spearmanr(top_10_labels, top_10_scores)
-                if np.isnan(spearman_rho_top10):
+            metric["kendall_tau"].append(kendall_tau)
+            
+            # Top-k ranking metrics (most relevant for drug discovery)
+            # Spearman's ρ and Kendall's τ on top-k fractions
+            
+            # Top 10% ranking correlation
+            n_top_10 = max(1, int(len(masked_labels) * 0.1))  # Top 10%
+            top_10_indices = np.argsort(masked_logits)[-n_top_10:]  # Highest scores
+            if len(top_10_indices) > 1:  # Need at least 2 points for correlation
+                top_10_labels = masked_labels[top_10_indices]
+                top_10_scores = masked_logits[top_10_indices]
+                try:
+                    spearman_rho_top10, _ = spearmanr(top_10_labels, top_10_scores)
+                    if np.isnan(spearman_rho_top10):
+                        spearman_rho_top10 = 0.0
+                except:
                     spearman_rho_top10 = 0.0
-            except:
-                spearman_rho_top10 = 0.0
-            try:
-                kendall_tau_top10, _ = kendalltau(top_10_labels, top_10_scores)
-                if np.isnan(kendall_tau_top10):
+                try:
+                    kendall_tau_top10, _ = kendalltau(top_10_labels, top_10_scores)
+                    if np.isnan(kendall_tau_top10):
+                        kendall_tau_top10 = 0.0
+                except:
                     kendall_tau_top10 = 0.0
-            except:
+            else:
+                spearman_rho_top10 = 0.0
                 kendall_tau_top10 = 0.0
-        else:
-            spearman_rho_top10 = 0.0
-            kendall_tau_top10 = 0.0
-        metric["spearman_rho_top10"].append(spearman_rho_top10)
-        metric["kendall_tau_top10"].append(kendall_tau_top10)
-        
-        # Top 20% ranking correlation
-        n_top_20 = max(1, int(len(masked_labels) * 0.2))  # Top 20%
-        top_20_indices = np.argsort(masked_logits)[-n_top_20:]  # Highest scores
-        if len(top_20_indices) > 1:  # Need at least 2 points for correlation
-            top_20_labels = masked_labels[top_20_indices]
-            top_20_scores = masked_logits[top_20_indices]
-            try:
-                spearman_rho_top20, _ = spearmanr(top_20_labels, top_20_scores)
-                if np.isnan(spearman_rho_top20):
+            metric["spearman_rho_top10"].append(spearman_rho_top10)
+            metric["kendall_tau_top10"].append(kendall_tau_top10)
+            
+            # Top 20% ranking correlation
+            n_top_20 = max(1, int(len(masked_labels) * 0.2))  # Top 20%
+            top_20_indices = np.argsort(masked_logits)[-n_top_20:]  # Highest scores
+            if len(top_20_indices) > 1:  # Need at least 2 points for correlation
+                top_20_labels = masked_labels[top_20_indices]
+                top_20_scores = masked_logits[top_20_indices]
+                try:
+                    spearman_rho_top20, _ = spearmanr(top_20_labels, top_20_scores)
+                    if np.isnan(spearman_rho_top20):
+                        spearman_rho_top20 = 0.0
+                except:
                     spearman_rho_top20 = 0.0
-            except:
-                spearman_rho_top20 = 0.0
-            try:
-                kendall_tau_top20, _ = kendalltau(top_20_labels, top_20_scores)
-                if np.isnan(kendall_tau_top20):
+                try:
+                    kendall_tau_top20, _ = kendalltau(top_20_labels, top_20_scores)
+                    if np.isnan(kendall_tau_top20):
+                        kendall_tau_top20 = 0.0
+                except:
                     kendall_tau_top20 = 0.0
-            except:
+            else:
+                spearman_rho_top20 = 0.0
                 kendall_tau_top20 = 0.0
-        else:
-            spearman_rho_top20 = 0.0
-            kendall_tau_top20 = 0.0
-        metric["spearman_rho_top20"].append(spearman_rho_top20)
-        metric["kendall_tau_top20"].append(kendall_tau_top20)
-        
-        # Top 50% ranking correlation
-        n_top_50 = max(1, int(len(masked_labels) * 0.5))  # Top 50%
-        top_50_indices = np.argsort(masked_logits)[-n_top_50:]  # Highest scores
-        if len(top_50_indices) > 1:  # Need at least 2 points for correlation
-            top_50_labels = masked_labels[top_50_indices]
-            top_50_scores = masked_logits[top_50_indices]
-            try:
-                spearman_rho_top50, _ = spearmanr(top_50_labels, top_50_scores)
-                if np.isnan(spearman_rho_top50):
+            metric["spearman_rho_top20"].append(spearman_rho_top20)
+            metric["kendall_tau_top20"].append(kendall_tau_top20)
+            
+            # Top 50% ranking correlation
+            n_top_50 = max(1, int(len(masked_labels) * 0.5))  # Top 50%
+            top_50_indices = np.argsort(masked_logits)[-n_top_50:]  # Highest scores
+            if len(top_50_indices) > 1:  # Need at least 2 points for correlation
+                top_50_labels = masked_labels[top_50_indices]
+                top_50_scores = masked_logits[top_50_indices]
+                try:
+                    spearman_rho_top50, _ = spearmanr(top_50_labels, top_50_scores)
+                    if np.isnan(spearman_rho_top50):
+                        spearman_rho_top50 = 0.0
+                except:
                     spearman_rho_top50 = 0.0
-            except:
-                spearman_rho_top50 = 0.0
-            try:
-                kendall_tau_top50, _ = kendalltau(top_50_labels, top_50_scores)
-                if np.isnan(kendall_tau_top50):
+                try:
+                    kendall_tau_top50, _ = kendalltau(top_50_labels, top_50_scores)
+                    if np.isnan(kendall_tau_top50):
+                        kendall_tau_top50 = 0.0
+                except:
                     kendall_tau_top50 = 0.0
-            except:
+            else:
+                spearman_rho_top50 = 0.0
                 kendall_tau_top50 = 0.0
-        else:
-            spearman_rho_top50 = 0.0
-            kendall_tau_top50 = 0.0
-        metric["spearman_rho_top50"].append(spearman_rho_top50)
-        metric["kendall_tau_top50"].append(kendall_tau_top50)
-        
-        # Positive Likelihood Ratio = Sensitivity / (1 - Specificity)
-        if specificity != 1:
-            pos_lr = sensitivity / (1 - specificity)
-            # Handle infinity values
-            if np.isinf(pos_lr) or np.isnan(pos_lr):
-                pos_lr = 1.0  # Default to 1.0 for infinite values
-        else:
-            pos_lr = 1.0  # Default to 1.0 instead of infinity
-        metric["pos_lr"].append(pos_lr)
-        
-        # Decision-making metrics for drug discovery
-        # Recall@Precision: For finding compounds we're confident are safe (non-toxic)
-        recall_at_precision_75 = _calculate_recall_at_precision(masked_labels, masked_logits, 0.75)
-        recall_at_precision_80 = _calculate_recall_at_precision(masked_labels, masked_logits, 0.80)
-        recall_at_precision_85 = _calculate_recall_at_precision(masked_labels, masked_logits, 0.85)
-        recall_at_precision_90 = _calculate_recall_at_precision(masked_labels, masked_logits, 0.90)
-        recall_at_precision_95 = _calculate_recall_at_precision(masked_labels, masked_logits, 0.95)
-        
-        metric["recall_at_precision_75"].append(recall_at_precision_75)
-        metric["recall_at_precision_80"].append(recall_at_precision_80)
-        metric["recall_at_precision_85"].append(recall_at_precision_85)
-        metric["recall_at_precision_90"].append(recall_at_precision_90)
-        metric["recall_at_precision_95"].append(recall_at_precision_95)
-        
-        # TNR@Recall: For filtering out compounds we're confident are toxic
-        tnr_at_recall_75 = _calculate_tnr_at_recall(masked_labels, masked_logits, 0.75)
-        tnr_at_recall_80 = _calculate_tnr_at_recall(masked_labels, masked_logits, 0.80)
-        tnr_at_recall_85 = _calculate_tnr_at_recall(masked_labels, masked_logits, 0.85)
-        tnr_at_recall_90 = _calculate_tnr_at_recall(masked_labels, masked_logits, 0.90)
-        tnr_at_recall_95 = _calculate_tnr_at_recall(masked_labels, masked_logits, 0.95)
-        
-        metric["tnr_at_recall_75"].append(tnr_at_recall_75)
-        metric["tnr_at_recall_80"].append(tnr_at_recall_80)
-        metric["tnr_at_recall_85"].append(tnr_at_recall_85)
-        metric["tnr_at_recall_90"].append(tnr_at_recall_90)
-        metric["tnr_at_recall_95"].append(tnr_at_recall_95)
+            metric["spearman_rho_top50"].append(spearman_rho_top50)
+            metric["kendall_tau_top50"].append(kendall_tau_top50)
+            
+            # Positive Likelihood Ratio = Sensitivity / (1 - Specificity)
+            if specificity != 1:
+                pos_lr = sensitivity / (1 - specificity)
+                # Handle infinity values
+                if np.isinf(pos_lr) or np.isnan(pos_lr):
+                    pos_lr = 1.0  # Default to 1.0 for infinite values
+            else:
+                pos_lr = 1.0  # Default to 1.0 instead of infinity
+            metric["pos_lr"].append(pos_lr)
+            
+            # Decision-making metrics for drug discovery
+            # Recall@Precision: For finding compounds we're confident are safe (non-toxic)
+            recall_at_precision_75 = _calculate_recall_at_precision(masked_labels, masked_logits, 0.75)
+            recall_at_precision_80 = _calculate_recall_at_precision(masked_labels, masked_logits, 0.80)
+            recall_at_precision_85 = _calculate_recall_at_precision(masked_labels, masked_logits, 0.85)
+            recall_at_precision_90 = _calculate_recall_at_precision(masked_labels, masked_logits, 0.90)
+            recall_at_precision_95 = _calculate_recall_at_precision(masked_labels, masked_logits, 0.95)
+            
+            metric["recall_at_precision_75"].append(recall_at_precision_75)
+            metric["recall_at_precision_80"].append(recall_at_precision_80)
+            metric["recall_at_precision_85"].append(recall_at_precision_85)
+            metric["recall_at_precision_90"].append(recall_at_precision_90)
+            metric["recall_at_precision_95"].append(recall_at_precision_95)
+            
+            # TNR@Recall: For filtering out compounds we're confident are toxic
+            tnr_at_recall_75 = _calculate_tnr_at_recall(masked_labels, masked_logits, 0.75)
+            tnr_at_recall_80 = _calculate_tnr_at_recall(masked_labels, masked_logits, 0.80)
+            tnr_at_recall_85 = _calculate_tnr_at_recall(masked_labels, masked_logits, 0.85)
+            tnr_at_recall_90 = _calculate_tnr_at_recall(masked_labels, masked_logits, 0.90)
+            tnr_at_recall_95 = _calculate_tnr_at_recall(masked_labels, masked_logits, 0.95)
+            
+            metric["tnr_at_recall_75"].append(tnr_at_recall_75)
+            metric["tnr_at_recall_80"].append(tnr_at_recall_80)
+            metric["tnr_at_recall_85"].append(tnr_at_recall_85)
+            metric["tnr_at_recall_90"].append(tnr_at_recall_90)
+            metric["tnr_at_recall_95"].append(tnr_at_recall_95)
 
     metric_mean = {f"{k}_mean": np.mean(v) for k, v in metric.items()}
     return metric_mean

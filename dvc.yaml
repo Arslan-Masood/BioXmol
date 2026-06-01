@@ -56,11 +56,71 @@ stages:
       /scratch/work/masooda1/datasets/LINCS_preprocessed/landmark_cmp_data_min1000compounds_all_measurements.parquet
       /scratch/work/masooda1/datasets/failed_SMILES/failed_molecules_report.csv
       mocop
+      Metadata_SMILES
     deps:
       - data/check_invalid_smiles.sh
       - check_invalid_smiles.py
       - mocop/featurizer/smiles_transformation.py
     desc: "Check for invalid SMILES in cell and genomic datasets"
+
+  # Check for invalid SMILES in ChEMBL20
+  check_invalid_smiles_chembl20:
+    cmd: >
+      sbatch data/check_invalid_smiles.sh
+      data/chembl20/chembl20.csv
+      -
+      data/chembl20/invalid_smiles.csv
+      mocop
+      smiles
+    deps:
+      - data/check_invalid_smiles.sh
+      - check_invalid_smiles.py
+      - mocop/featurizer/smiles_transformation.py
+      - data/chembl20/chembl20.csv
+    desc: "Check for invalid SMILES in ChEMBL20 dataset"
+
+  # Filter ChEMBL20 split CSVs to remove invalid SMILES
+  filter_chembl20_splits:
+    cmd: >
+      sbatch data/filter_chembl20_splits.sh
+      data/chembl20
+      data/chembl20/invalid_smiles.csv
+      data/chembl20/filtered_splits
+      mocop
+      data/chembl20/chembl20.csv
+    deps:
+      - data/filter_chembl20_splits.sh
+      - data/filter_chembl20_splits.py
+    desc: "Create filtered split CSVs excluding invalid SMILES"
+
+  # Process DILIRank v2.0 data - complete pipeline: fetch data, normalize SMILES, binarize labels, and split train/test
+  #process_dilirank_v2:
+  #  cmd: >
+  #    sbatch data/process_DILIRank_v2.sh
+  #    /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/DILIRank_raw.xlsx
+  #    /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2
+  #    pubhcem_env
+  #    mocop
+  #  deps:
+  #    - data/process_DILIRank_v2.sh
+  #    - data/process_DILIRank_v2.py
+  #    - data/SMILES_normalization.py
+  #    - data/DILI_v2_binarization.py
+  #    - data/DILI_v2_split_temporal.py
+  #    - /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/DILIRank_raw.xlsx
+  #    - /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/products.txt
+  #  desc: "Complete DILIRank v2.0 pipeline: fetch SMILES/dates, normalize SMILES, binarize labels, and split train/test (temporal split: train < 2010, test >= 2010)"
+
+# Process DILIRank v2.0 data - complete pipeline: fetch data, normalize SMILES, binarize labels, and split train/test
+  process_dilirank_v2_updated:
+    cmd: >
+      sbatch data/process_DILIRank_v2_updated.sh
+      /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/pubchem_data/Master_DILIRank_Final_Cleaned_with_labels.csv
+      /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/features
+      mocop
+    deps:
+      - data/process_DILIRank_v2_updated.sh
+    desc: "Complete DILIRank v2.0 pipeline: normalize SMILES, compute features, and extract embeddings"
 
 # JUMP VAE Hyperparameter Sweep
   vae_sweep_jump:
@@ -260,26 +320,6 @@ stages:
       - mocop/
     desc: "Train multimodal model with Student Teacher with pretrained AE encoders"
 
-  # Downstream Task Evaluation with CellLine MoCop
-  # ChEMBL20 Linear Evaluation
-  train_chembl20_cellline_mocop_linear:
-    cmd: >
-      sbatch exp/train_chembl20_cellline_mocop_linear_triton.sh
-      /scratch/work/masooda1/trained_model_pred/cellline_mocop
-      /path/to/cellline_mocop_checkpoint.ckpt
-      chembl20_cellline_mocop_linear.yml
-      mocop
-    deps:
-      - exp/train_chembl20_cellline_mocop_linear_triton.sh
-      - configs/chembl20_cellline_mocop_linear.yml
-      - bin/train.py
-      - bin/test.py
-      - bin/remap_state_dict.py
-      - mocop/
-    outs:
-      - /scratch/work/masooda1/trained_model_pred/cellline_mocop/chembl_20_pretrained_cellline_mocop_linear_prob/
-    desc: "ChEMBL20 linear evaluation with CellLine MoCop molecular encoder"
-
   # DILI Finetuning Evaluation
   finetune_MultiModal_on_DILI:
     cmd: >
@@ -379,6 +419,110 @@ stages:
       - /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_best_hp_runs/analysis/best_hp_results_std_across_folds.csv
       - /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILI_Gold_best_hp_runs/analysis/best_hp_results_by_model.csv
     desc: "Analyze best hyperparameters test results and create summary statistics"
+
+  # ChEMBL Evaluation Stages
+  evaluate_chembl_mocop:
+    cmd: sbatch scripts/Chembl_20_FineTuning.sh
+      /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/Chembl_20_FineTuning
+      Downstream_Chembl20.yml
+      /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training
+      mocop
+    deps:
+      - scripts/Chembl_20_FineTuning.sh
+      - configs/chembl20_mocop.yml
+      - bin/train.py
+    desc: "Fine-tune MoCop model on ChEMBL20"
+
+  # Analyze ChEMBL20 fine-tuning results
+  analyze_chembl20_results:
+    cmd: >
+      python scripts/analyze_chembl20_results.py
+      --results_dir /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/Chembl_20_FineTuning
+      --out_dir /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/Chembl_20_FineTuning/analysis
+      --metric val/auprc_mean
+    deps:
+      - scripts/analyze_chembl20_results.py
+      - /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/Chembl_20_FineTuning
+    desc: "Analyze ChEMBL20 fine-tuning results and create line plot with fraction on x-axis and metric on y-axis"
+
+  run_pyaivs_dilirank:
+    cmd: >
+      sbatch scripts/run_pyaivs_pipeline.sh
+      /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/DILIrank_SMILES_Labels.csv
+      /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/pyaivs
+      pyaivs_env
+    deps:
+      - scripts/run_pyaivs_pipeline.sh
+      - scripts/run_pyaivs_pipeline.py
+      - /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/DILIrank_SMILES_Labels.csv
+    desc: "Prepare DILIRank SMILES labels and run PyaiVS parameter optimisation and result generation"
+
+  # DILIRank v2.0 Fine-tuning Evaluation
+  evaluate_dilirank_v2:
+    cmd: >
+      sbatch scripts/DILIRank_v2_FineTuning.sh
+      /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILIRank_v2_FineTuning
+      Downstream_DILIRank_v2.yml
+      /scratch/work/masooda1/Multi_Modal_Contrastive/contrastive_training
+      mocop
+    deps:
+      - scripts/DILIRank_v2_FineTuning.sh
+      - configs/Downstream_DILIRank_v2.yml
+      - bin/train.py
+      - bin/test.py
+      - bin/remap_state_dict.py
+      - mocop/
+      - /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/DILIrank_2.0_binary_standard.csv
+      - /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/DILIrank_2.0_train.csv
+      - /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/DILIrank_2.0_test.csv
+    desc: "Fine-tune MoCop models on DILIRank v2.0 dataset (temporal split: train < 2010, test >= 2010)"
+
+  # Analyze DILIRank v2.0 fine-tuning results
+  analyze_dilirank_v2_results:
+    cmd: >
+      python scripts/analyze_dilirank_v2_results.py
+      --results_dir /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILIRank_v2_FineTuning
+      --out_dir /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILIRank_v2_FineTuning/analysis
+    deps:
+      - scripts/analyze_dilirank_v2_results.py
+      - /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILIRank_v2_FineTuning
+    desc: "Analyze DILIRank v2.0 fine-tuning results and create summary statistics and visualizations"
+
+  # DILIRank v2.0 Linear Probing Evaluation
+  dilirank_v2_linear_probing:
+    cmd: >
+      sbatch scripts/DILI_linear_probing_updated.sh
+      mocop
+      /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/features
+      /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILIRank_v2_LR_cv_without_activity_cliff_compounds
+    deps:
+      - scripts/DILI_linear_probing_updated.sh
+      - scripts/DILI_linear_probing_updated.py
+    desc: "Nested CV Logistic Regression on DILIRank v2 feature sets (multiple seeds)"
+
+# DILIRank v2.0 Linear Probing with 3 classes
+  dilirank_v2_linear_probing_3_classes:
+    cmd: >
+      sbatch scripts/DILI_linear_probing_3_classes.sh
+      mocop
+      /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/features
+      /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILIRank_v2_LR_3_classes
+    deps:
+      - scripts/DILI_linear_probing_3_classes.sh
+      - scripts/DILI_linear_probing_3_classes.py
+    desc: "Nested CV Logistic Regression on DILIRank v2 feature sets (multiple seeds)"
+
+# DILIRank v2.0 Linear Probing with 3 classes ordinal
+  dilirank_v2_linear_probing_3_classes_ordinal:
+    cmd: >
+      sbatch scripts/DILI_linear_probing_3_classes_ordinal.sh
+      mocop
+      /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/features
+      /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILIRank_v2_LR_3_classes_ordinal
+    deps:
+      - scripts/DILI_linear_probing_3_classes_ordinal.sh
+      - scripts/DILI_linear_probing_3_classes_ordinal.py
+    desc: "Nested CV Logistic Regression on DILIRank v2 feature sets (multiple seeds)"
 #  # Legacy commented stages
 #  train_jump_mocop:
 #    cmd: sbatch exp/train_jump_mocop_triton.sh

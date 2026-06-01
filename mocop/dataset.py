@@ -2,7 +2,7 @@ import sys
 sys.path.insert(1, '/scratch/project_462000766/Multi_Modal_Contrastive/mocop')
 from pathlib import Path
 
-from typing import Dict
+from typing import Dict, List
 import numpy as np
 import pandas as pd
 import torch
@@ -18,6 +18,24 @@ RDLogger.DisableLog('rdApp.*')
 from featurizer.smiles_transformation import (inchi2smiles, smiles2fp,
                                               smiles2graph)
 import deepchem as dc
+
+# Minimal feature dataset wrapper for linear probing / splitting on precomputed features
+class FeatureDataset:
+    """
+    Minimal wrapper to reuse _split_data for precomputed feature matrices.
+    Exposes:
+      - unique_smiles: list of SMILES (ids)
+      - df: pandas DataFrame containing the label column
+    """
+    def __init__(self, smiles: List[str], labels, label_col: str):
+        self.unique_smiles = list(smiles)
+        self.df = pd.DataFrame({label_col: labels})
+
+    def __len__(self):
+        return len(self.unique_smiles)
+
+    def __getitem__(self, idx):
+        return idx
 
 class SupervisedGraphDataset(Dataset):
     def __init__(
@@ -61,8 +79,11 @@ class SupervisedGraphDataset(Dataset):
                     print(f"Warning: failed to read invalid SMILES report at {report_path}: {e}")
 
         self.unique_smiles = self.df.index
+        # Build a lookup from SMILES to the current (post-filter) integer index
+        # for robust and fast mapping of external split files
+        self._smiles_to_idx = {s: i for i, s in enumerate(self.unique_smiles)}
         self.pad_length = pad_length
-        #print(f"Total compounds with valid SMILES: {len(self.unique_smiles)}")
+        print(f"Total compounds with valid SMILES: {len(self.unique_smiles)}")
 
 
     def __len__(self):
@@ -675,14 +696,17 @@ def _split_data(dataset: Dataset, splits: Dict[str, str], train_size=0.8, val_si
     for k, v in splits.items():
         print(f"Split {k}: {v}")
         df_split = pd.read_csv(v)
-        if "index" in df_split.columns:
-            idx = df_split["index"].values
+        if "SMILES" in df_split.columns:
+            # Use dict lookup for O(1) index mapping instead of O(n*m) enumeration
+            split_smiles_list = df_split["SMILES"].astype(str).tolist()
+            # Fast dict-based lookup: O(n) instead of O(n*m)
+            idx = [dataset._smiles_to_idx[s] for s in split_smiles_list if s in dataset._smiles_to_idx]
+            if len(idx) < len(split_smiles_list):
+                dropped = len(split_smiles_list) - len(idx)
+                if dropped > 0:
+                    print(f"Warning: dropped {dropped} split entries not present after filtering invalid SMILES")
         else:
-            split_smiles = df_split["SMILES"].unique()
-            idx = [
-                i
-                for i, smiles in enumerate(dataset.unique_smiles)
-                if smiles in split_smiles
-            ]
+            idx = df_split["index"].values
+
         split_dataset[k] = Subset(dataset, idx)
     return split_dataset
