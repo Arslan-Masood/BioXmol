@@ -775,12 +775,12 @@ stages:
       size: 1032
   dilirank_v2_linear_probing:
     cmd: "sbatch scripts/DILI_linear_probing_updated.sh mocop /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/features
-      /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILIRank_v2_LR_updated\n"
+      /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILIRank_v2_LR_cv_without_activity_cliff_compounds\n"
     deps:
     - path: scripts/DILI_linear_probing_updated.py
       hash: md5
-      md5: 78130c4d0856cbbc52f708c9652dedf2
-      size: 26072
+      md5: d78b164b6463e38e17989422efb6103c
+      size: 26643
     - path: scripts/DILI_linear_probing_updated.sh
       hash: md5
       md5: c605efd653c55939d92124265d84b5d6
@@ -793,3 +793,27 @@ stages:
       hash: md5
       md5: 67bf9659c88a59ba1854ed34963af09e
       size: 9549
+  dilirank_v2_linear_probing_3_classes:
+    cmd: "sbatch scripts/DILI_linear_probing_3_classes.sh mocop /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/features
+      /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILIRank_v2_LR_3_classes\n"
+    deps:
+    - path: scripts/DILI_linear_probing_3_classes.py
+      hash: md5
+      md5: 191b1210229fbed795f88ec349076632
+      size: 31395
+    - path: scripts/DILI_linear_probing_3_classes.sh
+      hash: md5
+      md5: aa9505330e57e874c0f62810631b654e
+      size: 8207
+  dilirank_v2_linear_probing_3_classes_ordinal:
+    cmd: "sbatch scripts/DILI_linear_probing_3_classes_ordinal.sh mocop /scratch/work/masooda1/datasets/downstream_datasets/DILIRank_v2/features
+      /scratch/work/masooda1/Multi_Modal_Contrastive/downstream/DILIRank_v2_LR_3_classes_ordinal\n"
+    deps:
+    - path: scripts/DILI_linear_probing_3_classes_ordinal.py
+      hash: md5
+      md5: 0c013cc04dcd8dbb853fd36c39ded0e8
+      size: 36352
+    - path: scripts/DILI_linear_probing_3_classes_ordinal.sh
+      hash: md5
+      md5: 6a6d8d64d1d568e1525b26172c5b2e5b
+      size: 8388
