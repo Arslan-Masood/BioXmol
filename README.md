@@ -1,214 +1,190 @@
-# Multi-Modal Representation Learning for Molecules
+# BioXMol: Unifying Disjoint Phenotypic Contexts: A Multimodal Soft Contrastive Approach to Identify DILI Activity Cliffs
 
-Muhammad Arslan Masood, Markus Heinonen, Samuel Kaski
+Muhammad Arslan Masood, Tianyu Cui, Markus Heinonen, Samuel Kaski
 
-[[`ICLR 2025 Workshop LMRL`](https://openreview.net/forum?id=WT7BpLvL6D)]
+[[`ICLR 2025 Workshop LMRL`](https://openreview.net/forum?id=WT7BpLvL6D)] — earlier version of this work.
+A full manuscript (DILI activity-cliff evaluation) has been submitted to *Journal of Cheminformatics*.
+
 <p align="center">
-  <img src="Triencoder_contrastive.png" width="100%" alt="Multi-Modal Contrastive Learning Architecture"/>
+  <img src="Triencoder_contrastive_v9.png" width="100%" alt="BioXMol Multimodal Contrastive Architecture"/>
 </p>
 
-## Abstract
+## Overview
 
-Molecular representation learning is a fundamental challenge in AI-driven drug discovery, with traditional unimodal approaches relying solely on chemical structures often failing to capture the biological context necessary for accurate toxicity and activity predictions. 
+BioXMol learns molecular representations by aligning chemical structure with two biological
+modalities — Cell Painting morphology (JUMP-CP) and L1000 transcriptomics (LINCS) — under a
+**soft contrastive objective**. Biological context is used only during pretraining; at inference
+the model operates on molecular structure alone, so the encoder applies to novel compounds with
+no assay data.
 
-We propose a **multimodal representation learning framework** that integrates molecular data with biological modalities, including:
-- **Morphological features** from Cell Painting assays
-- **Transcriptomic profiles** from the LINCS L1000 dataset
+The framework is evaluated on drug-induced liver injury (DILI) prediction, with particular
+emphasis on **activity cliffs**: structurally similar compounds with divergent toxicity outcomes
+that structure-based representations systematically fail to separate.
 
-### Key Innovation
-Unlike traditional approaches that require complete triplets (molecule, morphological, genomic), our model only requires **paired data**—(molecule-morphological) and (molecule-genomic)—making it more practical and scalable.
+## Key contributions
 
-Our approach leverages **contrastive learning** to align molecular representations with biological data, even in the absence of fully paired datasets. We evaluate our framework on the **ChEMBL20 dataset** using linear probing across **1,320 tasks**, demonstrating improvements in predictive performance.
+- **Partial pairing.** Pretraining requires only molecule–morphology and molecule–transcriptomics
+  pairs, not complete triplets. Because JUMP-CP and LINCS profile largely non-overlapping compound
+  sets, this allows pretraining over the union of two disjoint phenotypic datasets.
 
-## Features
+- **Soft contrastive objective.** Standard contrastive learning treats all non-matching pairs as
+  equally dissimilar negatives — a biologically implausible assumption that erases graded similarity
+  between structurally related compounds. BioXMol replaces hard negatives with soft targets derived
+  from EMA-updated teacher networks, weighting negative repulsion by biological similarity in the
+  teacher's latent space. This preserves the graded structure needed to resolve activity cliffs.
 
-- ✅ **Multimodal Integration**: Combines chemical structures with biological modalities
-- ✅ **Flexible Pairing**: Works with paired data instead of requiring complete triplets
-- ✅ **Contrastive Learning**: Aligns molecular and biological representations
-- ✅ **Scalable Framework**: Practical for real-world drug discovery applications
-- ✅ **Comprehensive Evaluation**: Tested on 1,320 ChEMBL20 tasks
+## Results (DILIRank 2.0)
 
-## Installation and Setup
+Standard scaffold-split cross-validation does not distinguish representations: all models, including
+ECFP, fall within overlapping confidence intervals. The differences appear only under activity-cliff
+evaluation (pairwise ranking accuracy on held-out structural-analog pairs):
 
-#### Cloning and setting up your environment
+| Representation              | Activity-cliff pairwise accuracy |
+|-----------------------------|----------------------------------|
+| **BioXMol-Soft**            | **80.7%**                        |
+| ECFP                        | 60.7%                            |
+| BioXMol-Hard (ablation)     | 51.0% (≈ chance)                 |
+
+The hard-contrastive ablation is trained on identical data and architecture, isolating the soft
+objective as the source of the gain. The choice of evaluation protocol — not the metric — is what
+makes the representation differences detectable.
+
+## Datasets
+
+| Dataset       | Molecules | Role         | Modality                       |
+|---------------|-----------|--------------|--------------------------------|
+| JUMP-CP       | ~120K     | Pretraining  | Morphological (3,479-dim)      |
+| LINCS L1000   | ~28K      | Pretraining  | Transcriptomic (978-dim)       |
+| DILIRank 2.0  | 1,336     | Downstream   | Ordinal severity (3 classes)   |
+
+JUMP-CP morphological profiles are sourced from the Cell Painting Gallery
+(`cpg0016-jump`, https://registry.opendata.aws/cellpainting-gallery/). LINCS L1000 signatures are
+accessed through CLUE (https://clue.io/). DILIRank 2.0 provides three ordered hepatotoxicity labels
+(*vNo-*, *vLess-*, *vMost-DILI-concern*); 15 structural-analog pairs with divergent labels are
+reserved as a held-out activity-cliff set.
+
+## Architecture
+
+- **Molecular encoder** — graph neural network over molecular graphs.
+- **Morphological / transcriptomic encoders** — initialized from independently pretrained
+  modality-specific autoencoders (the transcriptomic encoder also takes learned condition
+  embeddings for cell line, time point, and dose).
+- During contrastive pretraining each biological encoder is instantiated twice: a **student**
+  updated by gradient descent and a **teacher** updated by an exponential moving average of the
+  student (momentum *m* = 0.999). The teacher supplies the stable soft similarity targets.
+- All modalities project into a shared 128-dimensional, L2-normalized embedding space.
+
+The momentum-teacher design follows MoCo and DINO. The forward direction (molecule → biology)
+minimizes a soft cross-entropy against teacher self-similarity targets; the backward direction
+(biology → molecule) uses a hard cross-entropy.
+
+## Installation
+
 ```bash
-git clone https://github.com/Arslan-Masood/Multi_Modal_Contrastive.git
-cd Multi_Modal_Contrastive
-conda env create --name multi_modal_contrastive --file environment.yml
-conda activate multi_modal_contrastive
+git clone https://github.com/Arslan-Masood/BioXmol.git
+cd BioXmol
+conda env create --name bioxmol --file environment.yml
+conda activate bioxmol
 ```
 
-#### Data Version Control (DVC) Setup
-This project uses DVC for managing large datasets and model files. See [DVC_SETUP.md](DVC_SETUP.md) for detailed instructions.
+### Data Version Control (DVC)
+
+Large datasets and model artifacts are managed with DVC rather than committed to git.
+See [DVC_SETUP.md](DVC_SETUP.md) for full instructions.
 
 ```bash
-# Install DVC
 pip install dvc[all]
-
-# Initialize DVC (first time only)
-dvc init
-
-# Pull data from remote storage
-dvc pull
+dvc init          # first time only
+dvc pull          # fetch data/checkpoints from remote storage
 ```
 
 ## DVC Pipeline
 
-This project includes a comprehensive DVC pipeline for automated data processing and model training. The pipeline handles:
+The pipeline automates data processing and training:
 
-1. **📥 Data Download**: Downloads and extracts JUMP Cell Painting data
-2. **🔄 Data Processing**: Aggregates JUMP data, creates splits, and generates dummy datasets  
-3. **🧬 LINCS Processing**: Processes LINCS L1000 transcriptomic data
-4. **🤖 Model Training**: VAE/AE training, multi-modal contrastive learning, ChEMBL evaluation (stages available but commented)
-
-### Quick Start
+1. **Data download** — JUMP Cell Painting data download and extraction.
+2. **Data processing** — JUMP aggregation, split generation.
+3. **LINCS processing** — L1000 transcriptomic preprocessing.
+4. **Model training** — autoencoder pretraining, multimodal contrastive pretraining, downstream
+   evaluation (training stages available but commented by default).
 
 ```bash
-# Start a screen session for long-running processes
-screen -S dvc_pipeline
-
-# Load required modules and activate environment
+screen -S dvc_pipeline      # for long-running jobs
 module load mamba
-source activate mocop
-
-# Run the complete DVC pipeline
+source activate bioxmol
 dvc repro
 ```
 
-For detailed pipeline documentation, configuration options, monitoring instructions, and troubleshooting, see **[DVC_SETUP.md](DVC_SETUP.md)**.
+## Training
 
-## Methodology
-
-### 1. Data Modalities
-
-Our framework integrates three key data modalities:
-
-- **Chemical Structures**: SMILES representations and molecular graphs
-- **Morphological Features**: Cell Painting assay data capturing cellular morphology changes
-- **Transcriptomic Profiles**: LINCS L1000 gene expression data
-
-### 2. Contrastive Learning Framework
-
-We employ a contrastive learning approach that:
-- Learns shared representations across modalities
-- Handles missing modality pairs gracefully
-- Maximizes agreement between related molecular and biological data
-- Minimizes agreement between unrelated pairs
-
-### 3. Architecture
-
-The model consists of:
-- **Molecular Encoder**: Processes chemical structures using graph neural networks
-- **Morphological Encoder**: Handles Cell Painting features
-- **Transcriptomic Encoder**: Processes gene expression profiles
-- **Projection Heads**: Map each modality to a shared representation space
-
-## Quick Start
-
-#### Training the Multi-Modal Model
-
-Prepare your datasets in the required format:
-
-**Molecular Data (CSV format):**
-```csv
-smiles,compound_id
-CCO,compound_1
-c1ccccc1,compound_2
-...
-```
-
-**Morphological Data:**
-```csv
-compound_id,feature_1,feature_2,...,feature_n
-compound_1,0.123,0.456,...,0.789
-compound_2,0.234,0.567,...,0.890
-...
-```
-
-**Transcriptomic Data:**
-```csv
-compound_id,gene_1,gene_2,...,gene_m
-compound_1,1.23,2.34,...,3.45
-compound_2,2.34,3.45,...,4.56
-...
-```
-
-#### Training Command
 ```bash
 python bin/train.py \
     --config configs/multi_modal_config.yml \
-    --molecular_data path/to/molecular_data.csv \
+    --molecular_data    path/to/molecular_data.csv \
     --morphological_data path/to/morphological_data.csv \
     --transcriptomic_data path/to/transcriptomic_data.csv \
     --output_dir results/
 ```
 
-#### Fine-tuning on Downstream Tasks
-```bash
-python bin/train.py \
-    --config configs/finetune_config.yml \
-    --pretrained_model path/to/pretrained_model.ckpt \
-    --task_data path/to/chembl20_tasks.csv \
-    --output_dir results/finetune/
+Expected input formats:
+
+```csv
+# molecular_data.csv
+smiles,compound_id
+CCO,compound_1
+
+# morphological_data.csv
+compound_id,feature_1,...,feature_n
+compound_1,0.123,...,0.789
+
+# transcriptomic_data.csv
+compound_id,gene_1,...,gene_m
+compound_1,1.23,...,3.45
 ```
 
-## Reproducing Paper Results
+## Downstream Evaluation (DILI)
 
-### Environment Setup
-Set the necessary environment variables:
+Linear probing with an ordinal logistic-regression head (Frank–Hall decomposition over the three
+ordered severity classes), evaluated under 5×5 nested cross-validation with Murcko scaffold
+splitting and a held-out activity-cliff set:
+
 ```bash
-export DATA_DIR=/path/to/processed/data
-export SAVE_DIR=/path/to/model/outputs
-export CONDA_ENV=multi_modal_contrastive
+python DILI_linear_probing_3_classes_ordinal.py \
+    --features_file path/to/features.csv \
+    --label_col     vDILI-Concern_standardized \
+    --output_dir    results/dili/ \
+    --seed 42
 ```
 
-### Data Preparation
-```bash
-# Download and preprocess ChEMBL20, Cell Painting, and LINCS data
-bash data/download_and_preprocess.sh $DATA_DIR $CONDA_ENV
-```
-
-### Training
-```bash
-# Multi-modal contrastive pretraining
-bash exp/train_multimodal_contrastive.sh $SAVE_DIR $DATA_DIR $CONDA_ENV
-
-# ChEMBL20 evaluation with linear probing
-bash exp/evaluate_chembl20_linear.sh $SAVE_DIR $DATA_DIR $CONDA_ENV
-```
-
-## Results
-
-Our multi-modal approach demonstrates:
-- **Improved performance** on ChEMBL20 tasks compared to unimodal baselines
-- **Better generalization** across diverse molecular property prediction tasks
-- **Robust representations** that capture both chemical and biological context
-- **Scalable training** without requiring complete multimodal triplets
+The primary cliff metric is pairwise ranking accuracy: the fraction of analog pairs for which the
+expected severity E[Y] of the more-toxic compound exceeds that of the safer one.
 
 ## Citation
 
-If you use this work in your research, please cite:
-
 ```bibtex
 @inproceedings{masood2025multimodal,
-    title={Multi-Modal Representation learning for molecules},
-    author={Muhammad Arslan Masood and Markus Heinonen and Samuel Kaski},
-    booktitle={ICLR 2025 Workshop Learning Meaningful Representations of Life (LMRL)},
-    year={2025},
-    url={https://openreview.net/forum?id=WT7BpLvL6D}
+    title     = {Multi-Modal Representation learning for molecules},
+    author    = {Muhammad Arslan Masood and Markus Heinonen and Samuel Kaski},
+    booktitle = {ICLR 2025 Workshop Learning Meaningful Representations of Life (LMRL)},
+    year      = {2025},
+    url        = {https://openreview.net/forum?id=WT7BpLvL6D}
 }
 ```
 
+The full DILI activity-cliff manuscript is in preparation; this section will be updated on
+publication.
+
 ## License
 
-This project is released under the [GPLv3 license](LICENSE-GPLv3) for code and [CC-BY-NC-ND 4.0 license](LICENSE-CC-BY-NC-ND-4.0) for model weights.
+Code is released under the [GPLv3 license](LICENSE-GPLv3); model weights under
+[CC-BY-NC-ND 4.0](LICENSE-CC-BY-NC-ND-4.0).
 
 ## Contact
 
-For questions and collaborations, please contact:
-- Muhammad Arslan Masood (arslan.masood@aalto.fi)
-- Issues and discussions: [GitHub Issues](https://github.com/Arslan-Masood/Multi_Modal_Contrastive/issues)
+- Muhammad Arslan Masood — arslan.masood@aalto.fi
+- Issues and discussions: [GitHub Issues](https://github.com/Arslan-Masood/BioXmol/issues)
 
 ---
 
-**Keywords:** Multi-Modal, Representation learning, drug design, Contrastive learning, Cell Painting, LINCS L1000, ChEMBL20
+**Keywords:** multimodal representation learning, soft contrastive learning, drug-induced liver
+injury, activity cliffs, Cell Painting, LINCS L1000, DILIRank
