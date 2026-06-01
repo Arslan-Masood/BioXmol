@@ -6,7 +6,7 @@ Muhammad Arslan Masood, Tianyu Cui, Markus Heinonen, Samuel Kaski
 A full manuscript (DILI activity-cliff evaluation) has been submitted to *Journal of Cheminformatics*.
 
 <p align="center">
-  <img src="Triencoder_contrastive_v9.png" width="100%" alt="BioXMol Multimodal Contrastive Architecture"/>
+  <img src="Triencoder_contrastive.png" width="100%" alt="BioXMol Multimodal Contrastive Architecture"/>
 </p>
 
 ## Overview
